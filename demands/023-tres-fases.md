@@ -53,14 +53,14 @@ Três fases em sequência no campo existente: manhã clara, tarde alaranjada e n
 - Testes de progressão nos três modos verificam quantidade exata de nós, fases 0/1/2, preservação de moedas e vida, reposição de tempo/itens e continuação; vitória somente após noite. Validação de fases e dificuldades inválidas e saves legados incluída.
 - Roteiro manual: escolher cada dificuldade em Opções, iniciar e derrotar todos; conferir passagem manhã→tarde→noite e vitória final; Esc/Continuar em cada fase, expirar tempo e perder todas as vidas; conferir iluminação e lua com movimento.
 - Limitações: interação gráfica não executada, display :0 indisponível; capturas e GIF offscreen não substituem roteiro interativo.
-- Commits: repositório original estava vazio e somente leitura; `git status` falhou. `git init` comum falhou por proteção de .git; inicialização escalada autorizada concluída. Base e funcionalidades sendo registradas em commits separados, sem envio remoto.
+- Commits: repositório original estava vazio e somente leitura; `git status` falhou. `git init` comum falhou por proteção de .git; inicialização escalada autorizada concluída. Base registrada em `8fd6da7`; fases e capturas/GIF em `bc6fa4c`; dificuldade em commit próprio na sequência, sem envio remoto.
 
 ## Revisão
 
 - Parecer: Validação pendente.
 - Critérios conferidos: progressão, save/restauração, quantidade de inimigos por modo, reconstrução de nós ao mudar quantidade, cores de céu/neblina/cenário, lua apenas na noite e HUD preservado. Testes automatizados aprovados.
 - Achados: lua inicialmente cortada na captura, corrigida pelo codificador e captura repetida. Sem defeitos remanescentes que exijam correção.
-- Verificações posteriores: suíte final será registrada após organização dos commits.
+- Verificações posteriores: suíte com fases sem dificuldade, 83 aprovados em 6.26s; suíte final integrada `RUN_GRAPHICS_TESTS=1 .venv/bin/python -m pytest -q`, 94 aprovados em 8.99s. `git diff --check` sem problemas.
 
 ## Encerramento
 

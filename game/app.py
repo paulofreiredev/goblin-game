@@ -14,7 +14,7 @@ from panda3d.core import (
     loadPrcFileData,
 )
 
-from game.state import PHASE_COUNT, FIELD_LIMIT, Player, Storage
+from game.state import DIFFICULTIES, PHASE_COUNT, FIELD_LIMIT, Player, Storage
 from game.models import load_tree, load_enemy
 from game.hud import SevenSegmentDisplay
 from game.controls import key_label, load_controls, valid_action_key
@@ -78,6 +78,8 @@ class Game(ShowBase):
         self.jump_key, self.attack_key = load_controls(settings)
         self.binding_action = None
         self.binding_message = ""
+        preference = settings.get("difficulty", "medium")
+        self.difficulty = preference if isinstance(preference, str) and preference in DIFFICULTIES else "medium"
         self.player = Player()
         self.encounter = Encounter()
         self.mode = "menu"
@@ -123,7 +125,7 @@ class Game(ShowBase):
 
     def save_settings(self):
         return self.storage.write("settings.json", {"sound": self.sound_enabled,
-                                  "jump_key": self.jump_key, "attack_key": self.attack_key})
+                                  "jump_key": self.jump_key, "attack_key": self.attack_key, "difficulty": self.difficulty})
 
     def begin_binding(self, action):
         self.binding_action = action
@@ -579,9 +581,9 @@ class Game(ShowBase):
         self.button("Sair", -0.54, self.userExit)
         self.label(self.storage.last_error or "WASD / setas | Shift para correr", -0.70, 0.035)
 
-    def new_game(self):
-        self.player = Player()
-        self.encounter = Encounter()
+    def new_game(self, difficulty=None):
+        self.player = Player(difficulty=difficulty or self.difficulty)
+        self.encounter = Encounter(difficulty=self.player.difficulty)
         self.save()
         self.start_game()
 
@@ -589,13 +591,18 @@ class Game(ShowBase):
         player = self.storage.load_player()
         if player is not None:
             self.player = player
-            self.encounter = Encounter()
+            self.encounter = Encounter(difficulty=player.difficulty)
             self.encounter.restore(self.storage.read("save.json").get("enemies"))
             self.encounter.restore_hearts(self.storage.read("save.json").get("hearts"))
             self.encounter.restore_clocks(self.storage.read("save.json").get("clocks"))
             self.start_game()
 
     def start_game(self):
+        if len(self.enemy_nodes) != len(self.encounter.enemies):
+            for node in self.enemy_nodes + self.enemy_bars + self.coin_nodes + self.heart_nodes + self.clock_nodes:
+                node.removeNode()
+            self.make_enemy_nodes()
+            self.make_coins()
         self.apply_phase()
         self.player.x, self.player.y = safe_position(self.player.x, self.player.y)
         self.mode = "playing"
@@ -618,8 +625,8 @@ class Game(ShowBase):
     def finish_match(self, result):
         if result == "victory" and self.player.phase < PHASE_COUNT - 1:
             self.player = Player(health=self.player.health, coins=self.player.coins,
-                                 phase=self.player.phase + 1)
-            self.encounter = Encounter()
+                                 phase=self.player.phase + 1, difficulty=self.player.difficulty)
+            self.encounter = Encounter(difficulty=self.player.difficulty)
             self.save()
             self.start_game()
             return
@@ -733,12 +740,19 @@ class Game(ShowBase):
         self.keys.clear()
         self.panel()
         self.label("OPÇÕES", 0.28, 0.055)
-        self.button("Som: " + ("ativado" if self.sound_enabled else "desativado"), 0.08, self.toggle_sound)
-        self.button("Pulo: " + key_label(self.jump_key), -0.12, lambda: self.begin_binding("jump"))
-        self.button("Ataque: " + key_label(self.attack_key), -0.32, lambda: self.begin_binding("attack"))
-        self.button("Voltar", -0.54, self.main_menu)
+        self.button("Som: " + ("ativado" if self.sound_enabled else "desativado"), 0.10, self.toggle_sound)
+        self.button("Pulo: " + key_label(self.jump_key), -0.09, lambda: self.begin_binding("jump"))
+        self.button("Ataque: " + key_label(self.attack_key), -0.28, lambda: self.begin_binding("attack"))
+        self.button("Dificuldade: " + DIFFICULTIES[self.difficulty][0], -0.47, self.cycle_difficulty)
+        self.button("Voltar", -0.66, self.main_menu)
         self.label(self.storage.last_error or self.binding_message or self.audio_error
-                   or "As preferências são salvas automaticamente", -0.70, 0.027)
+                   or "Dificuldade aplicada ao novo jogo", -0.75, 0.023)
+
+    def cycle_difficulty(self):
+        modes = list(DIFFICULTIES)
+        self.difficulty = modes[(modes.index(self.difficulty) + 1) % len(modes)]
+        self.save_settings()
+        self.options()
 
     def toggle_sound(self):
         self.sound_enabled = not self.sound_enabled
@@ -791,7 +805,7 @@ class Game(ShowBase):
             move_on_terrain(self.player, old_x, old_y, self.encounter.enemies)
             self.encounter.update(self.player, dt)
             if self.encounter.restart_requested:
-                self.new_game()
+                self.new_game(difficulty=self.player.difficulty)
                 self.encounter.message_time = 3.0
                 return task.cont
             self.update_character()

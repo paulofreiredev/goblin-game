@@ -111,7 +111,7 @@ def test_menu_game_options_and_resume(tmp_path):
         game.toggle_sound()
         assert not game.sound_enabled
         assert game.music.status() != AudioSound.PLAYING
-        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x'}
+        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x', 'difficulty': 'medium'}
         game.toggle_sound()
         assert game.sound_enabled
         game.main_menu()
@@ -337,13 +337,14 @@ def test_clock_rendering_collection_resume_and_reset(tmp_path):
         game.destroy()
 
 
-def test_three_phase_campaign(tmp_path):
-    count = 8
+@pytest.mark.parametrize('difficulty,count', [('easy', 3), ('medium', 8), ('hard', 12)])
+def test_three_phase_campaign_and_saved_difficulty(tmp_path, difficulty, count):
     from panda3d.core import loadPrcFileData
     loadPrcFileData('', 'audio-library-name null')
     from game.app import Game
     game = Game(offscreen=True, storage_directory=tmp_path)
     try:
+        game.difficulty = difficulty
         game.new_game()
         game.player.coins, game.player.health = 4, 3
         colors = []
@@ -356,8 +357,9 @@ def test_three_phase_campaign(tmp_path):
             assert game.moon.isHidden() == (phase != 2)
             colors.append(tuple(game.world.getColorScale()))
             game.main_menu()
+            game.difficulty = 'easy' if difficulty != 'easy' else 'hard'
             game.continue_game()
-            assert game.player.phase == phase
+            assert game.player.phase == phase and game.player.difficulty == difficulty
             assert len(game.encounter.enemies) == count
             assert not any(clock.collected for clock in game.encounter.clocks)
             for enemy in game.encounter.enemies:
@@ -374,5 +376,11 @@ def test_three_phase_campaign(tmp_path):
         game.main_menu()
         game.continue_game()
         assert game.mode == 'victory'
+        game.options()
+        game.cycle_difficulty()
+        assert game.storage.read('settings.json')['difficulty'] == game.difficulty
+        game.new_game()
+        assert game.player.phase == 0
+        assert game.player.difficulty == game.difficulty
     finally:
         game.destroy()

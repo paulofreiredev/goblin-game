@@ -3,7 +3,7 @@ from dataclasses import dataclass
 import math
 import random
 from pathlib import Path
-from game.state import CLOCK_BONUS, FIELD_LIMIT, Player
+from game.state import CLOCK_BONUS, DIFFICULTIES, FIELD_LIMIT, Player
 from game.collisions import tree_obstacles
 
 # Hand-placed clusters keep the spawn clear and make exploration reproducible.
@@ -11,7 +11,8 @@ TREE_CLUSTERS = [(-11, 9), (15, 20), (-21, 28), (27, -7), (-30, -15),
                  (40, 35), (-44, 48), (54, -35), (-55, -48), (12, 65)]
 PONDS = []  # Piscinas removidas; mantido para compatibilidade.
 ENEMY_SPAWNS = [(0, 10), (-6, 18), (20, 9), (-18, 25), (33, -14),
-                (-32, -10), (9, 45), (40, 42)]
+                (-32, -10), (9, 45), (40, 42),
+                (60, 10), (-60, 5), (5, -55), (65, 60)]
 CLOCK_SPAWNS = [(6, -4), (-18, -20), (38, 12)]
 LEVEL_HEIGHT = 0.8
 STEP_WIDTH = 2.0
@@ -160,8 +161,9 @@ class ClockPickup:
 
 
 class Encounter:
-    def __init__(self, rng=None):
-        self.enemies = [Enemy(x, y) for x, y in ENEMY_SPAWNS]
+    def __init__(self, rng=None, difficulty="medium"):
+        count = DIFFICULTIES[difficulty][1]
+        self.enemies = [Enemy(x, y) for x, y in ENEMY_SPAWNS[:count]]
         self.clocks = [ClockPickup(x, y) for x, y in CLOCK_SPAWNS]
         self.damage_cooldown = 0.0
         self.message_time = 0.0

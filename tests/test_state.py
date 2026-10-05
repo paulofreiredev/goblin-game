@@ -86,14 +86,18 @@ def test_bonus_time_survives_save(tmp_path):
 
 
 @pytest.mark.parametrize('phase', [0, 1, 2])
-def test_phase_saved(tmp_path, phase):
+@pytest.mark.parametrize('difficulty', ['easy', 'medium', 'hard'])
+def test_phase_and_difficulty_saved(tmp_path, phase, difficulty):
     storage = Storage(tmp_path)
-    storage.save_player(Player(phase=phase))
-    assert storage.load_player().phase == phase
+    storage.save_player(Player(phase=phase, difficulty=difficulty))
+    loaded = storage.load_player()
+    assert loaded.phase == phase and loaded.difficulty == difficulty
 
 
-@pytest.mark.parametrize('phase', [True, -1, 3])
-def test_invalid_phase_uses_morning(tmp_path, phase):
+@pytest.mark.parametrize('phase,difficulty', [(True, None), (-1, []), (3, 'invalid')])
+def test_invalid_campaign_settings_use_defaults(tmp_path, phase, difficulty):
     storage = Storage(tmp_path)
-    storage.write('save.json', {'x': 0, 'y': 0, 'direction': 6, 'phase': phase})
-    assert storage.load_player().phase == 0
+    storage.write('save.json', {'x': 0, 'y': 0, 'direction': 6,
+                                'phase': phase, 'difficulty': difficulty})
+    loaded = storage.load_player()
+    assert loaded.phase == 0 and loaded.difficulty == 'medium'

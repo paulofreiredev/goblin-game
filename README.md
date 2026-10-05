@@ -16,9 +16,9 @@ Precisa de ambiente gráfico com suporte a OpenGL. A música fornecida em `asset
 
 ## Controles e menu
 
-- **Novo jogo:** inicia a fase da manhã no centro, com cinco vidas, oito monstros, dois corações aleatórios, três relógios e zero moedas; substitui a partida salva. Cada fase começa com 2 minutos.
+- **Novo jogo:** inicia a fase da manhã no centro, com cinco vidas, a quantidade de monstros da dificuldade escolhida, dois corações aleatórios, três relógios e zero moedas; substitui a partida salva. Cada fase começa com 2 minutos.
 - **Continuar:** retoma o último salvamento; fica desabilitado quando não existe um save válido.
-- **Opções:** ativa/desativa o som e mantém a preferência entre sessões.
+- **Opções:** configura som, teclas de ação e dificuldade; mantém as preferências entre sessões.
 - **WASD ou setas:** andar nas oito direções, com animação correspondente.
 - **Shift + movimento:** correr, com velocidade e cadência maiores.
 - **Espaço:** pular; não há salto duplo.
@@ -26,7 +26,7 @@ Precisa de ambiente gráfico com suporte a OpenGL. A música fornecida em `asset
 - **Esc:** volta ao menu e salva; nas opções, volta ao menu.
 - **Sair/fechar janela:** encerra e salva quando estiver jogando.
 
-Fase atual, posição, vida, moedas recolhidas, tempo restante, estado dos inimigos, moedas no chão, corações e relógios coletados são salvos a cada cinco segundos e ao voltar ao menu. Dados ficam em `.local/save.json` e `.local/settings.json`. O campo tem limites para manter o personagem no terreno. Perder o foco limpa as teclas pressionadas, mas mantém o jogo em execução, inclusive ao tirar Print Screen. Esc continua abrindo o menu e pausando.
+Fase atual, dificuldade da partida, posição, vida, moedas recolhidas, tempo restante, estado dos inimigos, moedas no chão, corações e relógios coletados são salvos a cada cinco segundos e ao voltar ao menu. Dados ficam em `.local/save.json` e `.local/settings.json`. O campo tem limites para manter o personagem no terreno. Perder o foco limpa as teclas pressionadas, mas mantém o jogo em execução, inclusive ao tirar Print Screen. Esc continua abrindo o menu e pausando.
 
 ## Testes
 
@@ -54,9 +54,9 @@ Dez conjuntos de árvores usam `assets/img/low.obj`. O OBJ reúne troncos e copa
 
 As piscinas foram removidas. Seus antigos pontos acompanham a altura do terreno local e permitem movimentação em velocidade normal.
 
-Oito inimigos usam a geometria de `assets/img/stilagmate.blend`, com textura procedural de pedra, altura de 1.45 unidade, iluminação e barras de vida. Fogem do jogador quando ele está a menos de 19 unidades, respeitando os limites do campo e desviando por eixo nas áreas bloqueadas. Não há navegação completa em torno dos bosques. Têm dois pontos de vida; golpes frontais alcançam 3.8 unidades, com intervalo de 0.6 segundo. O dano ocorre no início do golpe. Ataques muito altos não acertam o chão.
+Os inimigos usam a geometria de `assets/img/stilagmate.blend`, com textura procedural de pedra, altura de 1.45 unidade, iluminação e barras de vida. Fogem do jogador quando ele está a menos de 19 unidades, respeitando os limites do campo e desviando por eixo nas áreas bloqueadas. Não há navegação completa em torno dos bosques. Têm dois pontos de vida; golpes frontais alcançam 3.8 unidades, com intervalo de 0.6 segundo. O dano ocorre no início do golpe. Ataques muito altos não acertam o chão.
 
-O jogador tem cinco pontos de vida e recebe dano por contato com intervalo de 1.2 segundo. Saltar acima de uma unidade evita esse contato. Ao perder o último coração, a partida reinicia automaticamente: retorna ao centro com cinco vidas, oito monstros vivos, 2 minutos, zero moedas e dois novos corações aleatórios. Continuar recupera o estado completo salvo. Saves antigos continuam compatíveis; dados ausentes usam valores iniciais.
+O jogador tem cinco pontos de vida e recebe dano por contato com intervalo de 1.2 segundo. Saltar acima de uma unidade evita esse contato. Ao perder o último coração, a partida reinicia automaticamente: retorna ao centro com cinco vidas, os monstros da dificuldade da partida, 2 minutos, zero moedas e dois novos corações aleatórios. Continuar recupera o estado completo salvo. Saves antigos continuam compatíveis; dados ausentes usam valores iniciais.
 
 O modelo Blender foi exportado como malhas trianguladas em `assets/models/stilagmate.json`, preservando o original e excluindo do jogo seu plano de cenário. O jogo não precisa de Blender instalado. Para regenerar o derivado, use Blender 3.6.23 (versão validada):
 
@@ -72,13 +72,13 @@ O canto superior esquerdo mostra, em uma única linha sem caixa de fundo, os cin
 
 Cada monstro derrotado deixa uma moeda dourada com volume e espessura, girando em 3D. Moedas e corações do cenário têm dimensões semelhantes (cerca de 0.9 unidade). Os ícones da moeda e dos corações no HUD têm a mesma escala; o ícone do menu é maior. A moeda vale uma unidade e só entra na contagem ao se aproximar a até 1.2 unidade, perto do chão. A coleta ocorre uma única vez e é salva. Dois corações vermelhos aparecem em posições aleatórias livres de árvores a cada nova partida. Cada um recupera uma vida, até o máximo de cinco; com vida cheia, permanece disponível no chão.
 
-O jogo tem três fases em sequência: **manhã**, **tarde alaranjada** e **noite com uma lua grande**. Derrotar todos os monstros antes do cronômetro zerar avança à próxima fase. Cada fase repõe os oito monstros, os dois corações e os três relógios, retorna o personagem ao centro e começa com 120 segundos; vidas e moedas já coletadas são mantidas. Moedas ainda no chão da fase anterior são substituídas. A vitória final só ocorre após concluir a noite. Tempo esgotado encerra por derrota; perder todas as vidas reinicia a campanha pela manhã. Esc pausa e salva, e Continuar retoma a fase e o tempo. Após a vitória final, o tempo para e é possível recolher as moedas restantes.
+O jogo tem três fases em sequência: **manhã**, **tarde alaranjada** e **noite com uma lua grande**. Derrotar todos os monstros antes do cronômetro zerar avança à próxima fase. Cada fase repõe os monstros da dificuldade escolhida, os dois corações e os três relógios, retorna o personagem ao centro e começa com 120 segundos; vidas e moedas já coletadas são mantidas. Moedas ainda no chão da fase anterior são substituídas. A vitória final só ocorre após concluir a noite. Tempo esgotado encerra por derrota; perder todas as vidas reinicia a campanha pela manhã. Esc pausa e salva, e Continuar retoma a fase e o tempo. Após a vitória final, o tempo para e é possível recolher as moedas restantes.
 
 O terreno tem uma base plana com elevações e depressões retangulares: blocos maciços divididos em degraus de 0.8 unidade, com topos planos e paredes verticais, unidos numa única malha sem peças flutuantes. Personagem, monstros, árvores, grama, itens e câmera acompanham a altura local. As posições X/Y e o salto relativo ao chão continuam usando as regras existentes.
 
-Validação manual destas mudanças: conferir o HUD e o menu; redimensionar a janela; perseguir um monstro e observar sua fuga; atacar duas vezes; observar a moeda girar e recolhê-la; procurar os dois corações e testar coleta com vida cheia e incompleta; caminhar por elevações e depressões; salvar e continuar; vencer antes dos 2 minutos; deixar o tempo acabar; perder todas as vidas e conferir o reinício com oito monstros. A integração offscreen e as capturas revisadas não substituem esse roteiro interativo.
+Validação manual destas mudanças: conferir o HUD e o menu; redimensionar a janela; perseguir um monstro e observar sua fuga; atacar duas vezes; observar a moeda girar e recolhê-la; procurar os dois corações e testar coleta com vida cheia e incompleta; caminhar por elevações e depressões; salvar e continuar; vencer antes dos 2 minutos; deixar o tempo acabar; perder todas as vidas e conferir o reinício com a quantidade de monstros escolhida. A integração offscreen e as capturas revisadas não substituem esse roteiro interativo.
 
-Para subir uma elevação, pule com Espaço e avance: andar contra a parede bloqueia o movimento. Cada salto permite subir somente um degrau; é necessário aterrissar antes de subir o próximo. Ao sair de uma borda, o personagem conserva a altura inicial e cai gradualmente pela gravidade, com a sombra no chão inferior. Cair dois níveis ou mais retira uma vida ao aterrissar; quedas menores e saltos que terminam no mesmo nível não causam dano. Se a queda consumir a última vida, toda a partida reinicia com os oito monstros.
+Para subir uma elevação, pule com Espaço e avance: andar contra a parede bloqueia o movimento. Cada salto permite subir somente um degrau; é necessário aterrissar antes de subir o próximo. Ao sair de uma borda, o personagem conserva a altura inicial e cai gradualmente pela gravidade, com a sombra no chão inferior. Cair dois níveis ou mais retira uma vida ao aterrissar; quedas menores e saltos que terminam no mesmo nível não causam dano. Se a queda consumir a última vida, toda a partida reinicia pela manhã com os monstros da dificuldade da partida.
 
 A câmera usa uma distância intermediária de 20 unidades, altura relativa de 7 e alvo 3 unidades acima dos pés, com campo de visão horizontal de 60 graus. O chão ocupa a maior parte da tela e uma faixa de céu mostra nuvens claras, largas e irregulares, formadas por volumes sobrepostos. Durante uma queda, o alvo acompanha a altura real do personagem para manter a descida visível.
 
@@ -109,3 +109,17 @@ Capturas da execução real com renderização offscreen; a validação interati
 ![Jogo em movimento nas três fases](docs/images/jogo.gif)
 
 O GIF mostra 4.5 segundos de jogo em movimento nos três ambientes, com o cronômetro ativo. Para regenerar as imagens e o GIF, execute `.venv/bin/python tools/capture_preview.py`; a captura usa um save temporário e preserva sua partida.
+
+## Dificuldade
+
+Em **Opções**, clique em **Dificuldade** para alternar os modos. A seleção vale para **Novo jogo**; **Continuar** mantém a dificuldade da partida salva.
+
+| Modo | Monstros por fase |
+| --- | ---: |
+| Fácil | 3 |
+| Médio (padrão) | 8 |
+| Difícil | 12 |
+
+A quantidade se mantém nas três fases e no reinício por perda de vidas. Tempo, dano, vida dos monstros e bônus dos relógios seguem as mesmas regras.
+
+![Seleção de dificuldade em Opções](docs/images/dificuldade.png)
