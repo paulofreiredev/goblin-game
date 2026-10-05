@@ -17,6 +17,7 @@ from panda3d.core import (
 from game.state import DIFFICULTIES, PHASE_COUNT, FIELD_LIMIT, Player, Storage
 from game.models import load_tree, load_enemy
 from game.hud import SevenSegmentDisplay
+from game.camera import third_person_position
 from game.controls import key_label, load_controls, valid_action_key
 from game.world import (
     Encounter, TREE_CLUSTERS, TREE_SCALE, TREE_OBSTACLES, LOCAL_TREE_OBSTACLES,
@@ -241,6 +242,7 @@ class Game(ShowBase):
         self.sun_light = sun
         self.ambient_node = ambient_node
         self.sun_node = sun_node
+        self.camera_obstacles = []
         tree_template = load_tree(ROOT / "assets/img/low.obj")
         for index, (x, y) in enumerate(TREE_CLUSTERS):
             trees = tree_template.copyTo(self.world)
@@ -251,6 +253,8 @@ class Game(ShowBase):
             for part, (ox, oy, _) in zip(trees.getChildren(),
                                         TREE_OBSTACLES[start:start + len(LOCAL_TREE_OBSTACLES)]):
                 part.setZ((terrain_height(ox, oy) - terrain_height(x, y)) / TREE_SCALE)
+                lower, upper = part.getTightBounds(self.render)
+                self.camera_obstacles.append((tuple(lower), tuple(upper)))
             trees.setLight(ambient_node)
             trees.setLight(sun_node)
         tree_template.removeNode()
@@ -506,6 +510,8 @@ class Game(ShowBase):
         self.sprite.setTransparency(TransparencyAttrib.MAlpha)
         self.sprite.setBillboardPointEye()
         self.sprite.setDepthWrite(False)
+        self.sprite.setDepthTest(False)
+        self.sprite.setBin("fixed", 50)
         self.sprite.setTexture(self.textures[6, 0])
         # Elliptical ground shadow, independent of the billboard.
         cm = CardMaker("shadow")
@@ -616,8 +622,7 @@ class Game(ShowBase):
         self.update_coins()
         ground = player_ground_height(self.player.x, self.player.y)
         self.sky.setPos(self.player.x, self.player.y, ground)
-        self.camera.setPos(self.player.x, self.player.y - 20, ground + 7)
-        self.camera.lookAt(self.player.x, self.player.y, ground + 3)
+        self.update_camera(snap=True)
         result = self.encounter.match_result(self.player)
         if result:
             self.finish_match(result)
@@ -786,6 +791,18 @@ class Game(ShowBase):
         self.shadow.setScale(1.2 / (1 + self.player.z * 0.15), 1, 0.55 / (1 + self.player.z * 0.15))
         self.sprite.setTexture(self.textures[self.player.direction, self.player.frame])
 
+    def update_camera(self, dt=0.0, *, snap=False):
+        foot_height = player_ground_height(self.player.x, self.player.y) + self.player.z
+        desired = Vec3(self.player.x, self.player.y - 20, foot_height + 7)
+        if not snap:
+            desired = self.camera.getPos() + (desired - self.camera.getPos()) * (1 - math.exp(-7 * dt))
+        position = third_person_position((self.player.x, self.player.y, foot_height),
+                                         tuple(desired), self.camera_obstacles, terrain_height)
+        self.camera.setPos(*position)
+        distance = math.hypot(position[0] - self.player.x, position[1] - self.player.y)
+        look_height = 1.5 + 1.5 * min(1.0, distance / 20)
+        self.camera.lookAt(self.player.x, self.player.y, foot_height + look_height)
+
     def update(self, task):
         elapsed = max(0.0, self.clock.getDt())
         dt = min(elapsed, 0.1)
@@ -819,9 +836,7 @@ class Game(ShowBase):
             ground = player_ground_height(self.player.x, self.player.y)
             foot_height = ground + self.player.z
             self.sky.setPos(self.player.x, self.player.y, ground)
-            target = Vec3(self.player.x, self.player.y - 20, foot_height + 7)
-            self.camera.setPos(self.camera.getPos() + (target - self.camera.getPos()) * (1 - math.exp(-7 * dt)))
-            self.camera.lookAt(self.player.x, self.player.y, foot_height + 3)
+            self.update_camera(dt)
             self.save_timer += dt
             if self.save_timer >= 5:
                 self.save()

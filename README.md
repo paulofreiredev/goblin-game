@@ -80,7 +80,7 @@ Validação manual destas mudanças: conferir o HUD e o menu; redimensionar a ja
 
 Para subir uma elevação, pule com Espaço e avance: andar contra a parede bloqueia o movimento. Cada salto permite subir somente um degrau; é necessário aterrissar antes de subir o próximo. Ao sair de uma borda, o personagem conserva a altura inicial e cai gradualmente pela gravidade, com a sombra no chão inferior. Cair dois níveis ou mais retira uma vida ao aterrissar; quedas menores e saltos que terminam no mesmo nível não causam dano. Se a queda consumir a última vida, toda a partida reinicia pela manhã com os monstros da dificuldade da partida.
 
-A câmera usa uma distância intermediária de 20 unidades, altura relativa de 7 e alvo 3 unidades acima dos pés, com campo de visão horizontal de 60 graus. O chão ocupa a maior parte da tela e uma faixa de céu mostra nuvens claras, largas e irregulares, formadas por volumes sobrepostos. Durante uma queda, o alvo acompanha a altura real do personagem para manter a descida visível.
+A câmera em terceira pessoa usa distância padrão de 20 unidades, altura relativa de 7 e campo de visão horizontal de 60 graus. Ela se aproxima quando árvores, pedras ou terreno bloqueiam a linha de visão e mantém a posição acima do solo. Em espaço apertado, usa uma posição próxima elevada. O sprite do personagem é desenhado acima do cenário para continuar visível mesmo quando uma copa ou parede ainda se sobrepõe. O chão ocupa a maior parte da tela e uma faixa de céu mostra nuvens claras, largas e irregulares, formadas por volumes sobrepostos. Durante uma queda, o alvo acompanha a altura real do personagem para manter a descida visível.
 
 Roteiro complementar: tentar subir andando (deve bloquear); pular um degrau, tentar subir outro no mesmo salto (deve bloquear), aterrissar e saltar de novo; sair de uma borda e acompanhar a descida; cair um nível sem dano e dois ou mais com perda de uma vida; testar uma queda fatal; conferir céu, nuvens e visibilidade do chão durante movimento e salto.
 
@@ -123,3 +123,9 @@ Em **Opções**, clique em **Dificuldade** para alternar os modos. A seleção v
 A quantidade se mantém nas três fases e no reinício por perda de vidas. Tempo, dano, vida dos monstros e bônus dos relógios seguem as mesmas regras.
 
 ![Seleção de dificuldade em Opções](docs/images/dificuldade.png)
+
+## Câmera com visibilidade do personagem
+
+![Personagem visível próximo às árvores](docs/images/camera-bosque.png)
+
+A câmera acompanha também o salto e a queda; o HUD permanece em linha e a parte inferior continua sem textos. Captura offscreen: conferir também interativamente a passagem entre árvores, degraus, saltos e quedas.
