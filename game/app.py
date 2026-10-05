@@ -11,12 +11,13 @@ from panda3d.core import (
     CardMaker, Filename, Fog, PNMImage, TextNode, Texture,
     TransparencyAttrib, Vec3, StringStream, AmbientLight, DirectionalLight,
     Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter,
-    WindowProperties, loadPrcFileData,
+    InputDevice, InputDeviceManager, WindowProperties, loadPrcFileData,
 )
 
 from game.state import DIFFICULTIES, PHASE_COUNT, FIELD_LIMIT, Player, Storage
 from game.models import load_tree, load_enemy
 from game.hud import SevenSegmentDisplay
+from game.gamepad import GAMEPAD_ACTIONS, binding_label, load_bindings, mapped_actions, read_device, replace_binding
 from game.camera import (facing_direction, follow_heading, relative_movement,
                          segment_box_hit, third_person_position, view_direction)
 from game.controls import key_label, load_controls, valid_action_key
@@ -71,6 +72,7 @@ class Game(ShowBase):
         super().__init__(windowType="offscreen" if offscreen else None)
         self.disableMouse()
         self.ui_font = self.loader.loadFont(str(ROOT / "assets/fonts/goblin-digital.ttf"))
+        self.body_font = self.loader.loadFont(str(ROOT / "assets/fonts/menu-mono.ttf"))
         self.setBackgroundColor(0.63, 0.80, 0.88)
         self.camLens.setFov(60)
         self.camLens.setNearFar(0.1, 400)
@@ -78,6 +80,17 @@ class Game(ShowBase):
         settings = self.storage.read("settings.json")
         self.sound_enabled = settings.get("sound", True) is not False
         self.jump_key, self.attack_key = load_controls(settings)
+        self.gamepad_bindings = load_bindings(settings)
+        self.gamepad_device = None
+        self.gamepad_previous = {}
+        self.gamepad_scan_time = 0.0
+        self.pending_gamepad_action = None
+        self.gamepad_baseline = set()
+        self.menu_previous_actions = {}
+        self.menu_repeat_time = 0.0
+        self.menu_focus = None
+        self.menu_input_block = 0.0
+        self.gamepad_message = ""
         self.binding_action = None
         self.binding_message = ""
         preference = settings.get("difficulty", "medium")
@@ -91,6 +104,8 @@ class Game(ShowBase):
         self.camera_mode = "third_person"
         self.fps_heading = 0.0
         self.fps_pitch = 0.0
+        self.camera_switch_cooldown = 0.0
+        self.third_orbit_drag = False
         self.mouse_captured = False
         self.ui = []
         self.save_timer = 0.0
@@ -119,6 +134,8 @@ class Game(ShowBase):
         self.accept("control-key", self.capture_key)
         self.accept("escape", self.escape)
         self.accept("f", self.toggle_camera)
+        self.accept("mouse3", self.begin_camera_orbit)
+        self.accept("mouse3-up", self.end_camera_orbit)
         self.accept("window-event", self.window_event)
         self.camera.setPos(0, -20, 7)
         self.camera.lookAt(0, 0, 3)
@@ -134,7 +151,8 @@ class Game(ShowBase):
 
     def save_settings(self):
         return self.storage.write("settings.json", {"sound": self.sound_enabled,
-                                  "jump_key": self.jump_key, "attack_key": self.attack_key, "difficulty": self.difficulty})
+                                  "jump_key": self.jump_key, "attack_key": self.attack_key, "difficulty": self.difficulty,
+                                  "gamepad_bindings": self.gamepad_bindings})
 
     def begin_binding(self, action):
         self.binding_action = action
@@ -547,29 +565,33 @@ class Game(ShowBase):
         for element in self.ui:
             element.destroy()
         self.ui.clear()
+        self.menu_focus = None
 
     def label(self, text, z, scale=0.055, color=(0.90, 0.92, 0.82, 1)):
-        element = DirectLabel(text=text, text_font=self.ui_font, text_scale=scale, text_fg=color,
+        element = DirectLabel(text=text, text_font=self.ui_font if scale >= 0.09 else self.body_font, text_scale=max(scale, 0.036), text_fg=color,
                               text_align=TextNode.ACenter, frameColor=(0, 0, 0, 0), pos=(0, 0, z))
         self.ui.append(element)
         return element
 
-    def button(self, text, z, command, enabled=True):
-        element = DirectButton(text=text, text_font=self.ui_font, text_scale=0.052,
+    def button(self, text, z, command, enabled=True, *, x=0, width=0.65, scale=0.060, compact=False):
+        element = DirectButton(text=text, text_font=self.body_font, text_scale=scale,
                                text_fg=(0.95, 0.94, 0.84, 1),
-                               frameSize=(-0.38, 0.38, -0.065, 0.085),
+                               frameSize=(-width, width, -0.05 if compact else -0.065, 0.06 if compact else 0.085),
                                frameColor=((0.16, 0.25, 0.19, 1), (0.11, 0.18, 0.13, 1),
                                            (0.27, 0.39, 0.23, 1), (0.15, 0.17, 0.15, 1)),
-                               pos=(0, 0, z), relief=1, command=command,
+                               pos=(x, 0, z), relief=1, command=command,
                                state="normal" if enabled else "disabled")
         self.ui.append(element)
+        if self.menu_focus is None and enabled:
+            self.menu_focus = element
+            element.setColorScale(1.15, 1.20, 1.25, 1)
 
     def panel(self):
         self.clear_ui()
-        self.ui.append(DirectFrame(frameColor=(0.04, 0.08, 0.06, 0.94),
-                                   frameSize=(-0.67, 0.67, -0.78, 0.82)))
-        self.label("WOLF RIDERS", 0.59, 0.11, (0.82, 0.76, 0.44, 1))
-        self.label("Os campos verdes", 0.43, 0.045)
+        self.ui.append(DirectFrame(parent=self.render2d, frameColor=(0.025, 0.045, 0.055, 0.97),
+                                   frameSize=(-1, 1, -1, 1)))
+        self.label("WOLF RIDERS", 0.78, 0.12, (0.82, 0.76, 0.44, 1))
+        self.label("Os campos verdes", 0.64, 0.052)
 
     def save(self):
         return self.storage.save_player(self.player, self.encounter.snapshot(),
@@ -577,6 +599,7 @@ class Game(ShowBase):
                                         self.encounter.clock_snapshot())
 
     def main_menu(self):
+        self.pending_gamepad_action = None
         self.set_mouse_capture(False)
         if self.mode in ("playing", "victory"):
             self.save()
@@ -761,14 +784,92 @@ class Game(ShowBase):
         self.mode = "options"
         self.keys.clear()
         self.panel()
-        self.label("OPÇÕES", 0.28, 0.055)
-        self.button("Som: " + ("ativado" if self.sound_enabled else "desativado"), 0.10, self.toggle_sound)
-        self.button("Pulo: " + key_label(self.jump_key), -0.09, lambda: self.begin_binding("jump"))
-        self.button("Ataque: " + key_label(self.attack_key), -0.28, lambda: self.begin_binding("attack"))
-        self.button("Dificuldade: " + DIFFICULTIES[self.difficulty][0], -0.47, self.cycle_difficulty)
-        self.button("Voltar", -0.66, self.main_menu)
+        self.label("OPÇÕES", 0.43, 0.07)
+        self.button("Som: " + ("ativado" if self.sound_enabled else "desativado"), 0.08, self.toggle_sound, x=-0.76)
+        self.button("Dificuldade: " + DIFFICULTIES[self.difficulty][0], 0.08, self.cycle_difficulty, x=0.76)
+        self.button("Pulo: " + key_label(self.jump_key), -0.20, lambda: self.begin_binding("jump"), x=-0.76)
+        self.button("Ataque: " + key_label(self.attack_key), -0.20, lambda: self.begin_binding("attack"), x=0.76)
+        self.button("Controle USB", -0.48, self.controller_options, x=-0.76)
+        self.button("Voltar", -0.48, self.main_menu, x=0.76)
         self.label(self.storage.last_error or self.binding_message or self.audio_error
-                   or "Dificuldade aplicada ao novo jogo", -0.75, 0.023)
+                   or "Dificuldade aplicada ao novo jogo", -0.82, 0.042)
+
+    def scan_gamepad(self):
+        devices = InputDeviceManager.getGlobalPtr().getDevices()
+        candidates = [device for device in devices if device.connected and device.device_class in
+                      (InputDevice.DeviceClass.gamepad, InputDevice.DeviceClass.unknown)]
+        device = next((item for item in candidates if item == self.gamepad_device), None)
+        device = device or (candidates[0] if candidates else None)
+        if device != self.gamepad_device:
+            self.gamepad_device = device
+            self.gamepad_previous = {}
+            self.pending_gamepad_action = None
+            self.gamepad_baseline = set()
+            if self.mode == "controller_options":
+                self.controller_options(scan=False)
+
+    def controller_options(self, *, scan=True):
+        self.set_mouse_capture(False)
+        self.keys.clear()
+        if scan:
+            self.scan_gamepad()
+        self.mode = "controller_options"
+        self.panel()
+        self.label("CONTROLE USB", 0.47, 0.07)
+        connected = self.gamepad_device is not None and self.gamepad_device.connected
+        name = self.gamepad_device.name if connected else "Nenhum controle USB detectado"
+        self.label(name[:60], 0.35, 0.042)
+        for index, (action, title) in enumerate(GAMEPAD_ACTIONS.items()):
+            column, row = ((0, index) if index < 4 else
+                           (0, index - 5) if index >= 9 else (1, index - 4))
+            text = f"{title}: {binding_label(self.gamepad_bindings[action])}"
+            self.button(text, 0.20 - row * 0.17,
+                        lambda action=action: self.begin_gamepad_binding(action), connected,
+                        x=-0.78 if column == 0 else 0.78, width=0.70, scale=0.053, compact=True)
+        self.button("Voltar", -0.83, self.leave_controller_options)
+        if self.pending_gamepad_action:
+            message = self.gamepad_message or "Mova/pressione o controle. Esc cancela."
+        else:
+            message = self.gamepad_message or "Escolha uma ação para configurar"
+        self.label(self.storage.last_error or message, -0.96, 0.038)
+
+    def leave_controller_options(self):
+        self.pending_gamepad_action = None
+        self.gamepad_message = ""
+        self.options()
+
+    def begin_gamepad_binding(self, action):
+        if self.gamepad_device is None or not self.gamepad_device.connected:
+            return
+        self.pending_gamepad_action = action
+        self.menu_input_block = 0.25
+        self.gamepad_message = ""
+        self.gamepad_baseline = read_device(self.gamepad_device)
+        self.controller_options(scan=False)
+
+    def poll_gamepad(self, elapsed):
+        self.gamepad_scan_time -= elapsed
+        if self.gamepad_scan_time <= 0:
+            self.gamepad_scan_time = 0.5
+            self.scan_gamepad()
+        active = read_device(self.gamepad_device)
+        if self.mode == "controller_options" and self.pending_gamepad_action:
+            fresh = active - self.gamepad_baseline
+            self.gamepad_baseline.intersection_update(active)
+            if fresh:
+                binding = sorted(fresh)[0]
+                action = self.pending_gamepad_action
+                self.gamepad_bindings = replace_binding(self.gamepad_bindings, action, binding)
+                self.save_settings()
+                self.pending_gamepad_action = None
+                self.menu_input_block = 0.25
+                self.gamepad_message = "Configuração substituída e salva"
+                self.controller_options(scan=False)
+        actions = mapped_actions(active, self.gamepad_bindings)
+        edges = {action for action, pressed in actions.items()
+                 if pressed and not self.gamepad_previous.get(action, False)}
+        self.gamepad_previous = actions
+        return actions, edges
 
     def cycle_difficulty(self):
         modes = list(DIFFICULTIES)
@@ -790,6 +891,14 @@ class Game(ShowBase):
                 self.music.stop()
 
     def escape(self):
+        if self.mode == "controller_options":
+            if self.pending_gamepad_action:
+                self.pending_gamepad_action = None
+                self.gamepad_message = "Escolha cancelada"
+                self.controller_options(scan=False)
+            else:
+                self.leave_controller_options()
+            return
         if self.mode == "options" and self.binding_action is not None:
             self.binding_action = None
             self.binding_message = "Escolha cancelada."
@@ -837,12 +946,31 @@ class Game(ShowBase):
         self.turn_fps_view(pointer.getX() - center_x, pointer.getY() - center_y)
         self.win.movePointer(0, center_x, center_y)
 
-    def toggle_camera(self):
-        if self.mode not in ("playing", "victory"):
-            return
-        if self.camera_mode == "third_person":
-            self.camera_mode = "first_person"
+    def begin_camera_orbit(self):
+        if self.mode in ("playing", "victory") and self.camera_mode == "third_person":
+            self.third_orbit_drag = True
             self.fps_heading = self.follow_heading
+            self.set_mouse_capture(True)
+
+    def end_camera_orbit(self):
+        self.third_orbit_drag = False
+        if self.camera_mode == "third_person":
+            self.set_mouse_capture(False)
+
+    def view_heading(self):
+        if self.camera_mode == "first_person":
+            return self.fps_heading
+        return (math.degrees(math.atan2(self.player.x - self.camera.getX(),
+                                       self.player.y - self.camera.getY())) + 360) % 360
+
+    def toggle_camera(self):
+        if self.mode not in ("playing", "victory") or self.camera_switch_cooldown > 0:
+            return
+        self.camera_switch_cooldown = 0.35
+        self.third_orbit_drag = False
+        if self.camera_mode == "third_person":
+            self.fps_heading = self.view_heading()
+            self.camera_mode = "first_person"
             self.fps_pitch = 0
             self.player.direction = facing_direction(self.fps_heading)
         else:
@@ -895,9 +1023,53 @@ class Game(ShowBase):
                 node.setDepthWrite(True)
 
 
+    def navigate_menu(self, pad, elapsed):
+        actions = {action: bool(pad.get(action)) or self.keys.get(key, False)
+                   for action, key in [('up', 'arrow_up'), ('down', 'arrow_down'),
+                                       ('left', 'arrow_left'), ('right', 'arrow_right'), ('confirm', 'enter')]}
+        fresh = {action for action, pressed in actions.items()
+                 if pressed and not self.menu_previous_actions.get(action)}
+        self.menu_previous_actions = actions
+        if self.mode in ("playing", "victory") or self.pending_gamepad_action or self.menu_input_block > 0:
+            return
+        buttons = [item for item in self.ui if isinstance(item, DirectButton) and item['state'] != 'disabled']
+        if not buttons:
+            return
+        if self.menu_focus not in buttons:
+            self.menu_focus = buttons[0]
+        self.menu_repeat_time = max(0.0, self.menu_repeat_time - elapsed)
+        directions = {'up': (0, 1), 'down': (0, -1), 'left': (-1, 0), 'right': (1, 0)}
+        for action, (dx, dz) in directions.items():
+            if action not in fresh and not (actions[action] and self.menu_repeat_time == 0):
+                continue
+            self.menu_repeat_time = 0.30 if action in fresh else 0.14
+            origin = self.menu_focus.getPos()
+            candidates = []
+            for item in buttons:
+                delta = item.getPos() - origin
+                forward = delta.x * dx + delta.z * dz
+                if forward > 0.01:
+                    sideways = abs(delta.x * dz - delta.z * dx)
+                    candidates.append((sideways * 4 + forward, item))
+            if candidates:
+                self.menu_focus.clearColorScale()
+                self.menu_focus = min(candidates, key=lambda item: item[0])[1]
+                self.menu_focus.setColorScale(1.15, 1.20, 1.25, 1)
+            break
+        if 'confirm' in fresh:
+            command = self.menu_focus['command']
+            if command:
+                command(*self.menu_focus['extraArgs'])
+
     def update(self, task):
         elapsed = max(0.0, self.clock.getDt())
         dt = min(elapsed, 0.1)
+        self.camera_switch_cooldown = max(0.0, self.camera_switch_cooldown - elapsed)
+        self.menu_input_block = max(0.0, self.menu_input_block - elapsed)
+        pad, pad_edges = self.poll_gamepad(elapsed)
+        if "menu" in pad_edges and self.mode in ("playing", "victory"):
+            self.main_menu()
+        self.navigate_menu(pad, elapsed)
         if self.mode in ("playing", "victory"):
             if self.mode == "playing":
                 self.player.advance_match_time(elapsed)
@@ -906,19 +1078,29 @@ class Game(ShowBase):
                     self.finish_match(result)
                     return task.cont
             pressed = lambda *names: any(self.keys.get(name, False) for name in names)
-            dx = int(pressed("d", "arrow_right")) - int(pressed("a", "arrow_left"))
-            dy = int(pressed("w", "arrow_up")) - int(pressed("s", "arrow_down"))
+            turn = (int(pad.get("look_right", False)) - int(pad.get("look_left", False))) * 120 * dt
             if self.camera_mode == "first_person":
+                self.fps_heading = (self.fps_heading + turn) % 360
+            else:
+                self.follow_heading = (self.follow_heading + turn) % 360
+            if "jump" in pad_edges:
+                self.jump()
+            if "attack" in pad_edges:
+                self.attack()
+            pad_right, pad_left = pad.get("right", False), pad.get("left", False)
+            dx = int(pressed("d", "arrow_right") or pad_right) - int(pressed("a", "arrow_left") or pad_left)
+            dy = int(pressed("w", "arrow_up") or pad.get("up", False)) - int(pressed("s", "arrow_down") or pad.get("down", False))
+            if self.camera_mode == "first_person" or self.third_orbit_drag:
                 self.update_mouse_look()
-                dx, dy = relative_movement(dx, dy, self.fps_heading)
+                if self.third_orbit_drag and self.camera_mode == "third_person":
+                    self.follow_heading = self.fps_heading
+            dx, dy = relative_movement(dx, dy, self.view_heading())
             update_player_actions(self.player, dt)
             old_x, old_y = self.player.x, self.player.y
-            self.player.move(dx, dy, pressed("shift"), dt)
+            self.player.move(dx, dy, pressed("shift") or pad.get("run", False), dt)
             if self.camera_mode == "first_person":
                 self.player.direction = facing_direction(self.fps_heading)
             move_on_terrain(self.player, old_x, old_y, self.encounter.enemies)
-            if self.camera_mode == "third_person" and math.hypot(self.player.x - old_x, self.player.y - old_y) > 1e-6:
-                self.follow_heading = math.degrees(math.atan2(self.player.x - old_x, self.player.y - old_y))
             self.encounter.update(self.player, dt)
             if self.encounter.restart_requested:
                 self.new_game(difficulty=self.player.difficulty)

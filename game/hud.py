@@ -1,7 +1,7 @@
 """Displays brancos de sete segmentos, sem arquivos de fonte externos."""
 from io import BytesIO
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageFilter
 from direct.gui.DirectGui import DirectFrame
 from panda3d.core import PNMImage, StringStream, Texture, TransparencyAttrib
 
@@ -33,7 +33,10 @@ def display_image(value):
             for name in DIGIT_SEGMENTS[char]:
                 draw.polygon([(offset + x, y) for x, y in segments[name]], fill='white')
         offset += width
-    return image
+    outline = Image.new("RGBA", image.size, (3, 12, 20, 255))
+    outline.putalpha(image.getchannel("A").filter(ImageFilter.MaxFilter(7)))
+    outline.alpha_composite(image)
+    return outline
 
 
 class SevenSegmentDisplay(DirectFrame):

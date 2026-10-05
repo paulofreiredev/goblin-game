@@ -69,7 +69,7 @@ Referência para construção das malhas: [GeomVertexData no Panda3D](https://do
 
 ## Interface e objetivo da partida
 
-O canto superior esquerdo mostra, em uma única linha sem caixa de fundo, os cinco corações originais, uma moeda dourada ao lado da contagem e o cronômetro. Moedas e contagem regressiva MM:SS usam dígitos brancos grandes de sete segmentos; o cronômetro não tem rótulo. Menus, botões, mensagens e o norte do minimapa usam uma fonte digital com letras legíveis e acentos. O menu também mostra uma moeda dourada maior e a quantidade da partida salva. O minimapa redondo no canto superior direito cobre o campo inteiro, com norte para cima: branco indica o jogador, vermelho indica monstros vivos. Os marcadores se movem junto com os personagens e desaparecem após a derrota dos monstros.
+O canto superior esquerdo mostra, em uma única linha sem caixa de fundo, os cinco corações originais, uma moeda dourada ao lado da contagem e o cronômetro. Moedas e contagem regressiva MM:SS usam dígitos brancos grandes de sete segmentos; o cronômetro não tem rótulo. O título e o norte do minimapa mantêm fonte digital; menus, botões e mensagens usam fonte monoespaçada em negrito, com letras e acentos legíveis. Menus ocupam a tela inteira, com botões largos e espaçados. Dígitos do HUD têm contorno escuro para contrastar com o céu claro, mantendo o fundo transparente. O menu também mostra uma moeda dourada maior e a quantidade da partida salva. O minimapa redondo no canto superior direito cobre o campo inteiro, com norte para cima: branco indica o jogador, vermelho indica monstros vivos. Os marcadores se movem junto com os personagens e desaparecem após a derrota dos monstros.
 
 Cada monstro derrotado deixa uma moeda dourada com volume e espessura, girando em 3D. Moedas e corações do cenário têm dimensões semelhantes (cerca de 0.9 unidade). Os ícones da moeda e dos corações no HUD têm a mesma escala; o ícone do menu é maior. A moeda vale uma unidade e só entra na contagem ao se aproximar a até 1.2 unidade, perto do chão. A coleta ocorre uma única vez e é salva. Dois corações vermelhos aparecem em posições aleatórias livres de árvores a cada nova partida. Cada um recupera uma vida, até o máximo de cinco; com vida cheia, permanece disponível no chão.
 
@@ -140,3 +140,21 @@ Pressione **F** durante o jogo para alternar. Em FPS, a câmera fica na altura d
 ![Visão em primeira pessoa](docs/images/camera-fps.png)
 
 Para regenerar essa prévia: `.venv/bin/python tools/capture_camera_preview.py`. Captura offscreen com save temporário. Validar também mouse, foco da janela, F, Esc e retomada interativamente.
+
+## Controle USB
+
+Abra **Opções → Controle USB**. Clique na ação e pressione o botão ou mova o direcional para capturar. Frente, trás, esquerda e direita seguem a **visão atual**, nos dois modos de câmera. Eixos e botões de direcional são aceitos; mantenha Corrida para correr. Virar esq./dir. permite girar o olhar com os botões laterais do controle. As escolhas são salvas; Esc cancela a captura. Para mudar uma configuração, selecione novamente a ação e pressione o novo botão ou direcional. Se a entrada já estiver ocupada, as associações trocam de lugar; a nova escolha sempre substitui a anterior.
+
+![Configuração do controle USB](docs/images/controle-usb.png)
+
+O teclado continua funcionando. Na terceira pessoa, segure o botão direito do mouse e mova-o para girar a visão; em FPS, basta mover o mouse. Nos dois modos, WASD/setas também seguem a visão atual.
+
+Se aparecer `/dev/input/event13 is not readable`, o Linux está negando leitura daquele dispositivo. A [documentação do Panda3D](https://docs.panda3d.org/1.10/python/programming/hardware-support/joystick-support) indica acesso pelo grupo `input`. Confira `ls -l /dev/input/event13` e `id`; se o dispositivo pertencer a `input` e esse grupo existir, `sudo usermod -aG input "$USER"` permite adicionar seu usuário. Saia da sessão e entre novamente antes de reiniciar o jogo. Neste ambiente de desenvolvimento não existe `/dev/input`; validação com o controle físico permanece pendente.
+
+![Menu de opções em tela cheia](docs/images/opcoes-controle.png)
+
+![HUD com contraste no céu da manhã](docs/images/hud-contraste.png)
+
+A fonte dos textos comuns é DejaVu Sans Mono Bold, incluída em `assets/fonts/menu-mono.ttf` com a licença ao lado. O título continua com Goblin Digital e os números continuam em sete segmentos brancos.
+
+O botão configurado como **Menu (Start)** pausa a partida e abre o menu. Use o direcional para navegar e **Selecionar (B)** para escolher. A alternância com F tem intervalo mínimo de 0,35 segundo para evitar mudanças repetidas.

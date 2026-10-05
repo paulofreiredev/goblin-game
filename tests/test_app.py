@@ -111,7 +111,7 @@ def test_menu_game_options_and_resume(tmp_path):
         game.toggle_sound()
         assert not game.sound_enabled
         assert game.music.status() != AudioSound.PLAYING
-        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x', 'difficulty': 'medium'}
+        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x', 'difficulty': 'medium', 'gamepad_bindings': game.gamepad_bindings}
         game.toggle_sound()
         assert game.sound_enabled
         game.main_menu()
@@ -179,15 +179,19 @@ def test_menu_game_options_and_resume(tmp_path):
         game.set_key('d', True)
         old_x = game.player.x
         game.taskMgr.step()
-        assert game.player.x - old_x == pytest.approx(6 / 60)
+        assert ((game.player.x - old_x) ** 2 + (game.player.y - 7) ** 2) ** 0.5 == pytest.approx(6 / 60)
         game.keys.clear()
         from game.world import TREE_OBSTACLES, PLAYER_RADIUS
+        game.camera_mode = 'first_person'
+        game.fps_heading = 0
         trunk_x, trunk_y, trunk_radius = TREE_OBSTACLES[0]
         game.player.x, game.player.y = trunk_x - 2, trunk_y
         game.set_key('d', True)
         for _ in range(30):
             game.taskMgr.step()
         assert game.player.x <= trunk_x - trunk_radius - PLAYER_RADIUS
+        game.camera_mode = 'third_person'
+        game.update_camera(snap=True)
         game.graphicsEngine.renderFrame()
         assert game.win.saveScreenshot(str(tmp_path / 'game.png'))
         # Expired matches stop input and stay expired when resumed.
@@ -424,9 +428,164 @@ def test_fps_toggle_movement_attack_jump_and_menu(tmp_path):
         game.messenger.send('f')
         assert game.camera_mode == 'first_person'
         game.continue_game()
+        for _ in range(24):
+            game.taskMgr.step()
         game.messenger.send('f')
         assert game.camera_mode == 'third_person'
         assert not game.sprite.isHidden() and game.crosshair.isHidden()
         assert (game.camera.getPos() - game.actor.getPos()).length() > 8
+    finally:
+        game.destroy()
+
+
+def test_controller_options_mapping_gameplay_and_disconnect(tmp_path):
+    from panda3d.core import ClockObject, loadPrcFileData
+    from direct.gui.DirectGui import DirectButton, DirectLabel
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        game.options()
+        assert any(isinstance(item, DirectButton) and item['text'] == 'Controle USB' for item in game.ui)
+        game.controller_options()
+        assert game.mode == 'controller_options'
+        assert any('Nenhum controle' in item['text'] for item in game.ui if isinstance(item, DirectLabel))
+        device = fake_gamepad()
+        game.gamepad_device = device
+        game.gamepad_scan_time = 1000
+        game.controller_options(scan=False)
+        game.begin_gamepad_binding('run')
+        device.buttons[3].pressed = True
+        game.poll_gamepad(0)
+        assert game.gamepad_bindings['run'] == 'button:3'
+        assert game.storage.read('settings.json')['gamepad_bindings']['run'] == 'button:3'
+        device.buttons[3].pressed = False
+        game.begin_gamepad_binding('attack')
+        device.buttons[0].pressed = True
+        game.poll_gamepad(0)
+        assert game.pending_gamepad_action is None
+        assert game.gamepad_bindings['attack'] == 'button:0'
+        assert game.gamepad_bindings['jump'] == 'button:1'
+        assert game.storage.read('settings.json')['gamepad_bindings'] == game.gamepad_bindings
+        device.buttons[0].pressed = False
+        game.poll_gamepad(0)
+        game.begin_gamepad_binding('attack')
+        device.buttons[6].pressed = True
+        game.poll_gamepad(0)
+        assert game.gamepad_bindings['attack'] == 'button:6'
+        device.buttons[6].pressed = False
+        game.begin_gamepad_binding('jump')
+        device.buttons[0].pressed = True
+        game.poll_gamepad(0)
+        assert game.gamepad_bindings['jump'] == 'button:0'
+        device.buttons[0].pressed = False
+        game.begin_gamepad_binding('jump')
+        game.escape()
+        assert game.pending_gamepad_action is None and game.mode == 'controller_options'
+        game.escape()
+        assert game.mode == 'options'
+        game.new_game()
+        clock = ClockObject.getGlobalClock()
+        clock.setMode(ClockObject.MNonRealTime)
+        clock.setDt(1 / 60)
+        device.axes[1].value = 1
+        device.buttons[3].pressed = True
+        game.taskMgr.step()
+        assert game.player.y == pytest.approx(12 / 60)
+        device.axes[1].value = 0
+        device.buttons[3].pressed = False
+        device.buttons[0].pressed = True
+        game.taskMgr.step()
+        assert game.player.z > 0
+        device.buttons[0].pressed = False
+        game.new_game()
+        enemy = game.encounter.enemies[0]
+        enemy.x, enemy.y = 0, 2
+        game.player.direction = 2
+        device.buttons[6].pressed = True
+        game.taskMgr.step()
+        assert enemy.health == 1
+        for _ in range(65):
+            enemy.x, enemy.y = 0, 2
+            game.taskMgr.step()
+        assert enemy.health == 1
+        device.connected = False
+        old_position = game.player.x, game.player.y
+        game.taskMgr.step()
+        assert (game.player.x, game.player.y) == old_position
+        assert not any(game.gamepad_previous.values())
+        game.messenger.send('f')
+        device.connected = True
+        device.buttons[6].pressed = False
+        device.axes[0].value = 1
+        heading = game.fps_heading
+        game.taskMgr.step()
+        assert game.fps_heading == heading
+        assert (game.player.x, game.player.y) != old_position
+    finally:
+        game.destroy()
+
+
+def test_usb_four_directions_follow_view_in_both_camera_modes(tmp_path):
+    from panda3d.core import ClockObject, loadPrcFileData
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        device = fake_gamepad()
+        game.gamepad_device, game.gamepad_scan_time = device, 1000
+        clock = ClockObject.getGlobalClock()
+        clock.setMode(ClockObject.MNonRealTime)
+        clock.setDt(1 / 60)
+        for mode in ['third_person', 'first_person']:
+            for axes, expected in [((0, 1), (0.1, 0)), ((0, -1), (-0.1, 0)),
+                                   ((1, 0), (0, -0.1)), ((-1, 0), (0, 0.1))]:
+                game.new_game()
+                game.camera_mode = mode
+                game.follow_heading = game.fps_heading = 90
+                game.player.x = game.player.y = 70
+                game.update_camera(snap=True)
+                for axis, value in zip(device.axes, axes):
+                    axis.value = value
+                game.taskMgr.step()
+                assert (game.player.x - 70, game.player.y - 70) == pytest.approx(expected, abs=1e-5)
+    finally:
+        game.destroy()
+
+
+def test_usb_start_menu_navigation_confirmation_and_camera_delay(tmp_path):
+    from panda3d.core import ClockObject, loadPrcFileData
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        device = fake_gamepad()
+        game.gamepad_device, game.gamepad_scan_time = device, 1000
+        clock = ClockObject.getGlobalClock()
+        clock.setMode(ClockObject.MNonRealTime)
+        clock.setDt(1 / 60)
+        game.new_game()
+        game.messenger.send('f')
+        game.messenger.send('f')
+        assert game.camera_mode == 'first_person'
+        for _ in range(23):
+            game.taskMgr.step()
+        game.messenger.send('f')
+        assert game.camera_mode == 'third_person'
+        device.buttons[7].pressed = True
+        game.taskMgr.step()
+        assert game.mode == 'menu'
+        assert game.menu_focus['text'] == 'Novo jogo'
+        device.buttons[7].pressed = False
+        device.axes[1].value = -1
+        game.taskMgr.step()
+        assert game.menu_focus['text'] == 'Continuar'
+        device.axes[1].value = 0
+        device.buttons[0].pressed = True
+        game.taskMgr.step()
+        assert game.mode == 'playing'
     finally:
         game.destroy()
