@@ -14,7 +14,7 @@ from panda3d.core import (
     loadPrcFileData,
 )
 
-from game.state import FIELD_LIMIT, Player, Storage
+from game.state import PHASE_COUNT, FIELD_LIMIT, Player, Storage
 from game.models import load_tree, load_enemy
 from game.hud import SevenSegmentDisplay
 from game.controls import key_label, load_controls, valid_action_key
@@ -225,6 +225,7 @@ class Game(ShowBase):
         fog.setColor(0.63, 0.80, 0.88)
         fog.setLinearRange(65, 145)
         self.world.setFog(fog)
+        self.distance_fog = fog
 
     def make_scenery(self):
         ambient = AmbientLight("ambient")
@@ -315,6 +316,36 @@ class Game(ShowBase):
                 node.setScale(*scale)
                 node.setTwoSided(True)
             self.cloud_nodes.append(cloud)
+
+        moon = GeomNode("full-moon")
+        moon.addGeom(geometry)
+        self.moon = self.sky.attachNewNode(moon)
+        self.moon.setPos(35, 125, 13)
+        self.moon.setScale(9)
+        self.moon.setColorScale(1, 0.98, 0.85, 1)
+        self.moon.setFogOff()
+        self.moon.setTwoSided(True)
+        self.moon.hide()
+
+    def apply_phase(self):
+        themes = [
+            ((0.63, 0.80, 0.88), (1, 1, 1, 1), (1, 1, 1, 1),
+             (0.65, 0.65, 0.60, 1), (0.75, 0.72, 0.60, 1)),
+            ((0.95, 0.42, 0.16), (1, 0.72, 0.46, 1), (1, 0.73, 0.52, 1),
+             (0.70, 0.43, 0.30, 1), (0.90, 0.48, 0.22, 1)),
+            ((0.025, 0.04, 0.11), (0.50, 0.58, 0.76, 1), (0.19, 0.24, 0.38, 1),
+             (0.45, 0.50, 0.68, 1), (0.35, 0.40, 0.58, 1)),
+        ]
+        sky, ground, clouds, ambient, sun = themes[self.player.phase]
+        self.setBackgroundColor(*sky)
+        self.distance_fog.setColor(*sky)
+        self.world.setColorScale(*ground)
+        self.actor.setColorScale(*ground)
+        self.ambient_light.setColor(ambient)
+        self.sun_light.setColor(sun)
+        for cloud in self.cloud_nodes:
+            cloud.setColorScale(*clouds)
+        self.moon.show() if self.player.phase == 2 else self.moon.hide()
 
     def update_enemies(self):
         for enemy, node, bar in zip(self.encounter.enemies, self.enemy_nodes, self.enemy_bars):
@@ -565,6 +596,7 @@ class Game(ShowBase):
             self.start_game()
 
     def start_game(self):
+        self.apply_phase()
         self.player.x, self.player.y = safe_position(self.player.x, self.player.y)
         self.mode = "playing"
         self.keys.clear()
@@ -584,6 +616,13 @@ class Game(ShowBase):
             self.finish_match(result)
 
     def finish_match(self, result):
+        if result == "victory" and self.player.phase < PHASE_COUNT - 1:
+            self.player = Player(health=self.player.health, coins=self.player.coins,
+                                 phase=self.player.phase + 1)
+            self.encounter = Encounter()
+            self.save()
+            self.start_game()
+            return
         self.mode = result
         self.keys.clear()
         self.save()

@@ -85,3 +85,15 @@ def test_bonus_time_survives_save(tmp_path):
     assert storage.load_player().time_remaining == 210
 
 
+@pytest.mark.parametrize('phase', [0, 1, 2])
+def test_phase_saved(tmp_path, phase):
+    storage = Storage(tmp_path)
+    storage.save_player(Player(phase=phase))
+    assert storage.load_player().phase == phase
+
+
+@pytest.mark.parametrize('phase', [True, -1, 3])
+def test_invalid_phase_uses_morning(tmp_path, phase):
+    storage = Storage(tmp_path)
+    storage.write('save.json', {'x': 0, 'y': 0, 'direction': 6, 'phase': phase})
+    assert storage.load_player().phase == 0

@@ -4,6 +4,7 @@ import json
 import math
 from pathlib import Path
 
+PHASE_COUNT = 3
 FIELD_LIMIT = 90.0
 MATCH_DURATION = 120.0
 CLOCK_BONUS = 30.0
@@ -27,6 +28,7 @@ class Player:
     jump_active: bool = False
     climbed_this_jump: bool = False
     fall_start_height: float | None = None
+    phase: int = 0
 
     def advance_match_time(self, dt: float) -> None:
         self.time_remaining = max(0.0, self.time_remaining - max(0.0, dt))
@@ -126,15 +128,19 @@ class Storage:
             if (type(time_remaining) not in (int, float) or not math.isfinite(time_remaining)
                     or not 0 <= time_remaining <= MAX_MATCH_TIME):
                 time_remaining = MATCH_DURATION
+            phase = data.get("phase", 0)
+            if type(phase) is not int or not 0 <= phase < PHASE_COUNT:
+                phase = 0
             return Player(x=x, y=y, direction=direction, health=health, coins=coins,
-                          time_remaining=float(time_remaining))
+                          time_remaining=float(time_remaining), phase=phase )
         except (KeyError, TypeError, ValueError, OverflowError):
             return None
 
     def save_player(self, player: Player, enemies=None, hearts=None, clocks=None) -> bool:
         data = {"x": player.x, "y": player.y, "direction": player.direction,
                 "health": player.health, "coins": player.coins,
-                "time_remaining": player.time_remaining}
+                "time_remaining": player.time_remaining,
+                "phase": player.phase}
         if enemies is not None:
             data["enemies"] = enemies
         if hearts is not None:

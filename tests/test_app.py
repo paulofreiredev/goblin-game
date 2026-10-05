@@ -202,7 +202,9 @@ def test_menu_game_options_and_resume(tmp_path):
         assert game.mode == 'defeat'
         game.new_game()
         assert game.player.time_remaining == 120
-        # The final kill ends the match immediately and saves the reward.
+        # The final kill in the night phase ends the campaign.
+        game.player.phase = 2
+        game.apply_phase()
         for enemy in game.encounter.enemies:
             enemy.health = 0
         enemy = game.encounter.enemies[0]
@@ -335,3 +337,42 @@ def test_clock_rendering_collection_resume_and_reset(tmp_path):
         game.destroy()
 
 
+def test_three_phase_campaign(tmp_path):
+    count = 8
+    from panda3d.core import loadPrcFileData
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        game.new_game()
+        game.player.coins, game.player.health = 4, 3
+        colors = []
+        for phase in range(3):
+            assert game.player.phase == phase
+            assert game.mode == 'playing'
+            assert len(game.encounter.enemies) == len(game.enemy_nodes) == len(game.coin_nodes) == count
+            assert len(game.enemy_bars) == count
+            assert game.player.health == 3 and game.player.coins == 4
+            assert game.moon.isHidden() == (phase != 2)
+            colors.append(tuple(game.world.getColorScale()))
+            game.main_menu()
+            game.continue_game()
+            assert game.player.phase == phase
+            assert len(game.encounter.enemies) == count
+            assert not any(clock.collected for clock in game.encounter.clocks)
+            for enemy in game.encounter.enemies:
+                enemy.health = 0
+            game.encounter.clocks[0].collected = True
+            game.player.time_remaining = 15
+            game.finish_match('victory')
+            if phase < 2:
+                assert game.player.time_remaining == 120
+                assert game.encounter.defeated == 0
+                assert (game.player.x, game.player.y) == (0, 0)
+        assert len(set(colors)) == 3
+        assert game.mode == 'victory' and game.player.phase == 2
+        game.main_menu()
+        game.continue_game()
+        assert game.mode == 'victory'
+    finally:
+        game.destroy()

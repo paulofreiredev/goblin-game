@@ -16,7 +16,7 @@ Precisa de ambiente gráfico com suporte a OpenGL. A música fornecida em `asset
 
 ## Controles e menu
 
-- **Novo jogo:** inicia uma partida de 2 minutos no centro, com cinco vidas, oito monstros, dois corações aleatórios, três relógios e zero moedas; substitui a partida salva.
+- **Novo jogo:** inicia a fase da manhã no centro, com cinco vidas, oito monstros, dois corações aleatórios, três relógios e zero moedas; substitui a partida salva. Cada fase começa com 2 minutos.
 - **Continuar:** retoma o último salvamento; fica desabilitado quando não existe um save válido.
 - **Opções:** ativa/desativa o som e mantém a preferência entre sessões.
 - **WASD ou setas:** andar nas oito direções, com animação correspondente.
@@ -26,7 +26,7 @@ Precisa de ambiente gráfico com suporte a OpenGL. A música fornecida em `asset
 - **Esc:** volta ao menu e salva; nas opções, volta ao menu.
 - **Sair/fechar janela:** encerra e salva quando estiver jogando.
 
-Posição, vida, moedas recolhidas, tempo restante, estado dos inimigos, moedas no chão, corações e relógios coletados são salvos a cada cinco segundos e ao voltar ao menu. Dados ficam em `.local/save.json` e `.local/settings.json`. O campo tem limites para manter o personagem no terreno. Perder o foco limpa as teclas pressionadas, mas mantém o jogo em execução, inclusive ao tirar Print Screen. Esc continua abrindo o menu e pausando.
+Fase atual, posição, vida, moedas recolhidas, tempo restante, estado dos inimigos, moedas no chão, corações e relógios coletados são salvos a cada cinco segundos e ao voltar ao menu. Dados ficam em `.local/save.json` e `.local/settings.json`. O campo tem limites para manter o personagem no terreno. Perder o foco limpa as teclas pressionadas, mas mantém o jogo em execução, inclusive ao tirar Print Screen. Esc continua abrindo o menu e pausando.
 
 ## Testes
 
@@ -72,7 +72,7 @@ O canto superior esquerdo mostra, em uma única linha sem caixa de fundo, os cin
 
 Cada monstro derrotado deixa uma moeda dourada com volume e espessura, girando em 3D. Moedas e corações do cenário têm dimensões semelhantes (cerca de 0.9 unidade). Os ícones da moeda e dos corações no HUD têm a mesma escala; o ícone do menu é maior. A moeda vale uma unidade e só entra na contagem ao se aproximar a até 1.2 unidade, perto do chão. A coleta ocorre uma única vez e é salva. Dois corações vermelhos aparecem em posições aleatórias livres de árvores a cada nova partida. Cada um recupera uma vida, até o máximo de cinco; com vida cheia, permanece disponível no chão.
 
-É preciso derrotar todos os oito monstros antes de o cronômetro zerar para vencer. Se o tempo acabar com monstros vivos, a partida termina por derrota. Esc pausa no menu, e Continuar conserva o tempo restante. Após vencer, o tempo para, mas ainda é possível andar e recolher moedas; Esc abre o menu. Retomar uma partida já encerrada conserva o resultado.
+O jogo tem três fases em sequência: **manhã**, **tarde alaranjada** e **noite com uma lua grande**. Derrotar todos os monstros antes do cronômetro zerar avança à próxima fase. Cada fase repõe os oito monstros, os dois corações e os três relógios, retorna o personagem ao centro e começa com 120 segundos; vidas e moedas já coletadas são mantidas. Moedas ainda no chão da fase anterior são substituídas. A vitória final só ocorre após concluir a noite. Tempo esgotado encerra por derrota; perder todas as vidas reinicia a campanha pela manhã. Esc pausa e salva, e Continuar retoma a fase e o tempo. Após a vitória final, o tempo para e é possível recolher as moedas restantes.
 
 O terreno tem uma base plana com elevações e depressões retangulares: blocos maciços divididos em degraus de 0.8 unidade, com topos planos e paredes verticais, unidos numa única malha sem peças flutuantes. Personagem, monstros, árvores, grama, itens e câmera acompanham a altura local. As posições X/Y e o salto relativo ao chão continuam usando as regras existentes.
 
@@ -97,3 +97,15 @@ A fonte vetorial `assets/fonts/goblin-digital.ttf` é original deste projeto, de
 Validação manual do HUD digital: conferir alinhamento e ausência da caixa preta, corações com cores e tamanho anteriores, moeda junto da contagem e tempo branco MM:SS. Recolher moeda e relógio, perder uma vida, salvar/continuar e verificar atualização. Conferir textos e acentos nos menus e nas opções; redimensionar a janela e verificar a leitura.
 
 Durante a partida e após a vitória, a parte inferior do campo fica livre de instruções e mensagens de status. Os controles estão descritos acima e as teclas de pulo/ataque podem ser consultadas em Opções.
+
+## Capturas das três fases
+
+Capturas da execução real com renderização offscreen; a validação interativa em janela permanece pendente.
+
+| Manhã | Tarde alaranjada | Noite com lua grande |
+| --- | --- | --- |
+| ![Fase da manhã](docs/images/manha.png) | ![Fase da tarde](docs/images/tarde.png) | ![Fase da noite](docs/images/noite.png) |
+
+![Jogo em movimento nas três fases](docs/images/jogo.gif)
+
+O GIF mostra 4.5 segundos de jogo em movimento nos três ambientes, com o cronômetro ativo. Para regenerar as imagens e o GIF, execute `.venv/bin/python tools/capture_preview.py`; a captura usa um save temporário e preserva sua partida.
