@@ -24,8 +24,7 @@ from game.camera import (facing_direction, follow_heading, relative_movement,
 from game.controls import key_label, load_controls, valid_action_key
 from game.world import (
     Encounter, TREE_CLUSTERS, TREE_SCALE, TREE_OBSTACLES, LOCAL_TREE_OBSTACLES,
-    TERRAIN_BLOCKS, LEVEL_HEIGHT, STEP_WIDTH,
-    safe_position, terrain_height, player_ground_height,
+    safe_position, terrain_height, terrain_surfaces, player_ground_height,
     jump_player, update_player_actions, move_on_terrain,
 )
 
@@ -232,11 +231,9 @@ class Game(ShowBase):
         color = GeomVertexWriter(data, "color")
         triangles = GeomTriangles(Geom.UHStatic)
         xs, ys = {-100, 100}, {-100, 100}
-        for x0, x1, y0, y1, height in TERRAIN_BLOCKS:
-            for level in range(round(abs(height) / LEVEL_HEIGHT)):
-                inset = level * STEP_WIDTH
-                xs.update((x0 + inset, x1 - inset))
-                ys.update((y0 + inset, y1 - inset))
+        for x0, x1, y0, y1, height in terrain_surfaces():
+            xs.update((x0, x1))
+            ys.update((y0, y1))
         xs, ys = sorted(xs), sorted(ys)
 
         def quad(points, shade):
@@ -629,6 +626,7 @@ class Game(ShowBase):
 
     def main_menu(self):
         self.pending_gamepad_action = None
+        self.local_binding = None
         self.set_mouse_capture(False)
         if self.mode in ("playing", "victory"):
             self.save()
@@ -1081,6 +1079,13 @@ class Game(ShowBase):
                 self.music.stop()
 
     def escape(self):
+        if self.mode == "local_controls":
+            if self.local_binding:
+                self.local_binding = None
+                self.local_controls_menu(self.local_team)
+            else:
+                self.two_player_menu()
+            return
         if self.mode == "controller_options":
             if self.pending_gamepad_action:
                 self.pending_gamepad_action = None

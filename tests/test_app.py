@@ -629,6 +629,11 @@ def test_two_players_controls_pause_resume_and_solo_save(tmp_path):
         game.begin_local_binding('jump')
         game.capture_key('n')
         assert game.local_controls[1]['jump'] == 'n'
+        game.begin_local_binding('attack')
+        game.escape()
+        assert game.mode == 'local_controls' and game.local_binding is None
+        game.escape()
+        assert game.mode == 'two_players'
         device = fake_gamepad()
         game.gamepad_device = device
         game.gamepad_scan_time = 1000

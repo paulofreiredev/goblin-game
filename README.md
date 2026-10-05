@@ -172,3 +172,7 @@ No menu principal, escolha **Dois jogadores → Jogar**. As equipes são **Verde
 ![Dois jogadores capturando bandeiras](docs/images/dois-jogadores.gif)
 
 Para regenerar prints e GIF: `.venv/bin/python tools/capture_local_preview.py`. Captura offscreen; interação com dois jogadores e controle real precisa ser conferida no computador do jogador.
+
+## Terreno
+
+O campo tem duas elevações e duas depressões grandes. Há escadas em apenas dois acessos, com degraus de 4 unidades de profundidade e largura de 26 ou 30 unidades. Os demais lados têm faces diretas e os interiores são planos.

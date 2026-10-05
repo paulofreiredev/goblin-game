@@ -15,7 +15,7 @@ ENEMY_SPAWNS = [(0, 10), (-6, 18), (20, 9), (-18, 25), (33, -14),
                 (60, 10), (-60, 5), (5, -55), (65, 60)]
 CLOCK_SPAWNS = [(6, -4), (-18, -20), (38, 12)]
 LEVEL_HEIGHT = 0.8
-STEP_WIDTH = 2.0
+STEP_WIDTH = 4.0
 PLAYER_RADIUS = 0.6
 PLAYER_BODY_HEIGHT = 1.8
 ENEMY_RADIUS = 0.5
@@ -29,17 +29,32 @@ for index, (cx, cy) in enumerate(TREE_CLUSTERS):
                                cy + TREE_SCALE * (x * math.sin(angle) + y * math.cos(angle)),
                                radius * TREE_SCALE))
 TERRAIN_BLOCKS = [(-40, -6, -10, 16, 2.4), (18, 48, 25, 52, 3.2),
-                  (-55, -25, 30, 60, -2.4), (22, 60, -42, -1, -1.6),
-                  (-65, -40, -60, -35, 1.6), (-5, 18, 40, 60, -1.6)]
+                  (-55, -25, 30, 60, -2.4), (22, 60, -42, -1, -1.6)]
+
+
+def terrain_surfaces():
+    """Faixas largas de acesso em um lado; outros blocos são planos."""
+    surfaces = []
+    for index, (x0, x1, y0, y1, height) in enumerate(TERRAIN_BLOCKS):
+        if index not in (0, 2):
+            surfaces.append((x0, x1, y0, y1, height))
+            continue
+        levels = round(abs(height) / LEVEL_HEIGHT)
+        for level in range(levels):
+            if index == 0:  # Acesso pelo leste, largura de todo o lado.
+                left = x0 if level == levels - 1 else x1 - (level + 1) * STEP_WIDTH
+                right = x1 - level * STEP_WIDTH
+            else:  # Acesso pelo oeste da depressão.
+                left = x0 + level * STEP_WIDTH
+                right = x1 if level == levels - 1 else x0 + (level + 1) * STEP_WIDTH
+            surfaces.append((left, right, y0, y1, math.copysign((level + 1) * LEVEL_HEIGHT, height)))
+    return surfaces
 
 
 def terrain_base_height(x: float, y: float) -> float:
-    for x0, x1, y0, y1, height in TERRAIN_BLOCKS:
+    for x0, x1, y0, y1, height in terrain_surfaces():
         if x0 <= x < x1 and y0 <= y < y1:
-            inset = min(x - x0, x1 - x, y - y0, y1 - y)
-            levels = round(abs(height) / LEVEL_HEIGHT)
-            level = min(levels, 1 + int(inset / STEP_WIDTH))
-            return math.copysign(level * LEVEL_HEIGHT, height)
+            return height
     return 0.0
 
 
@@ -60,14 +75,12 @@ def player_ground_height(x: float, y: float) -> float:
         angle = index * 2 * math.pi / 16
         heights.append(terrain_height(x + PLAYER_RADIUS * math.cos(angle),
                                       y + PLAYER_RADIUS * math.sin(angle)))
-    # Exact corner contacts on rectangular steps complement the radial samples.
-    for x0, x1, y0, y1, height in TERRAIN_BLOCKS:
-        for level in range(round(abs(height) / LEVEL_HEIGHT)):
-            inset = level * STEP_WIDTH
-            nearest_x = max(x0 + inset + 1e-7, min(x1 - inset - 1e-7, x))
-            nearest_y = max(y0 + inset + 1e-7, min(y1 - inset - 1e-7, y))
-            if math.hypot(nearest_x - x, nearest_y - y) < PLAYER_RADIUS:
-                heights.append(terrain_height(nearest_x, nearest_y))
+    # Contato exato com cantos, usando as mesmas faixas da malha.
+    for x0, x1, y0, y1, height in terrain_surfaces():
+        nearest_x = max(x0 + 1e-7, min(x1 - 1e-7, x))
+        nearest_y = max(y0 + 1e-7, min(y1 - 1e-7, y))
+        if math.hypot(nearest_x - x, nearest_y - y) < PLAYER_RADIUS:
+            heights.append(height)
     return max(heights)
 
 

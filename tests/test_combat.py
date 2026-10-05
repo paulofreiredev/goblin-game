@@ -292,7 +292,7 @@ def test_climbing_requires_jump_and_only_one_level_per_jump():
     move_on_terrain(player, -5.3, 0)
     assert player.x == -6.1
     assert player.z + 0.8 == pytest.approx(absolute_height)
-    player.x = -8.1
+    player.x = -10.1
     move_on_terrain(player, -6.1, 0)
     assert player.x == -6.1
     for _ in range(20):
@@ -300,9 +300,9 @@ def test_climbing_requires_jump_and_only_one_level_per_jump():
     assert player.z == 0 and not player.climbed_this_jump
     assert jump_player(player)
     update_player_actions(player, 0.15)
-    player.x = -8.1
+    player.x = -10.1
     move_on_terrain(player, -6.1, 0)
-    assert player.x == -8.1
+    assert player.x == -10.1
     assert player.health == 5
 
 
@@ -312,12 +312,12 @@ def test_cannot_skip_two_levels_even_when_jump_is_high_enough():
     jump_player(player)
     update_player_actions(player, 0.4)
     assert player.z == pytest.approx(1.6)
-    player.x = -8.1
+    player.x = -10.1
     move_on_terrain(player, -5.3, 0)
     assert player.x == -5.3
 
 
-@pytest.mark.parametrize('start_x,end_x,drop,damage', [(-20, 0, 2.4, 1), (-9, -7, 0.8, 0)])
+@pytest.mark.parametrize('start_x,end_x,drop,damage', [(-20, 0, 2.4, 1), (-11, -7, 0.8, 0)])
 def test_fall_is_continuous_and_damage_only_on_landing(start_x, end_x, drop, damage):
     from game.world import move_on_terrain, terrain_height, update_player_actions
     player = Player(x=start_x)
@@ -402,3 +402,17 @@ def test_trunk_colliders_follow_asset_scale_and_rotation():
     assert ox == pytest.approx(cx + TREE_SCALE * (x * math.cos(angle) - y * math.sin(angle)))
     assert oy == pytest.approx(cy + TREE_SCALE * (x * math.sin(angle) + y * math.cos(angle)))
     assert transformed_radius == pytest.approx(radius * TREE_SCALE)
+
+
+def test_few_terrain_blocks_have_wide_stairs_on_only_one_side():
+    from game.world import terrain_surfaces, terrain_height, TERRAIN_BLOCKS, STEP_WIDTH
+    assert len(TERRAIN_BLOCKS) == 4 and STEP_WIDTH == 4
+    assert len(terrain_surfaces()) == 8
+    for y in (-9, 0, 15):
+        assert terrain_height(-7, y) == pytest.approx(0.8)
+        assert terrain_height(-11, y) == pytest.approx(1.6)
+        assert terrain_height(-15, y) == pytest.approx(2.4)
+    assert terrain_height(-39.9, 0) == pytest.approx(2.4)
+    assert terrain_height(-20, -9.9) == pytest.approx(2.4)
+    assert terrain_height(18.1, 25.1) == pytest.approx(3.2)
+    assert terrain_height(59.9, -41.9) == pytest.approx(-1.6)
