@@ -14,6 +14,7 @@ from panda3d.core import (
     InputDevice, InputDeviceManager, WindowProperties, loadPrcFileData,
 )
 
+from game.capture import CaptureMatch, LOCAL_ACTIONS, load_local_controls, replace_local_key
 from game.state import DIFFICULTIES, PHASE_COUNT, FIELD_LIMIT, Player, Storage
 from game.models import load_tree, load_enemy
 from game.hud import SevenSegmentDisplay
@@ -81,6 +82,12 @@ class Game(ShowBase):
         self.sound_enabled = settings.get("sound", True) is not False
         self.jump_key, self.attack_key = load_controls(settings)
         self.gamepad_bindings = load_bindings(settings)
+        self.local_controls = load_local_controls(settings)
+        self.local_binding = None
+        self.local_team = 0
+        self.capture_match = None
+        self.capture_nodes = []
+        self.local_previous = [{}, {}]
         self.gamepad_device = None
         self.gamepad_previous = {}
         self.gamepad_scan_time = 0.0
@@ -131,7 +138,9 @@ class Game(ShowBase):
         self.bind_action_keys()
         if self.buttonThrowers:
             self.buttonThrowers[0].node().setButtonDownEvent("control-key")
+            self.buttonThrowers[0].node().setButtonUpEvent("control-key-up")
         self.accept("control-key", self.capture_key)
+        self.accept("control-key-up", self.release_key)
         self.accept("escape", self.escape)
         self.accept("f", self.toggle_camera)
         self.accept("mouse3", self.begin_camera_orbit)
@@ -152,14 +161,34 @@ class Game(ShowBase):
     def save_settings(self):
         return self.storage.write("settings.json", {"sound": self.sound_enabled,
                                   "jump_key": self.jump_key, "attack_key": self.attack_key, "difficulty": self.difficulty,
-                                  "gamepad_bindings": self.gamepad_bindings})
+                                  "gamepad_bindings": self.gamepad_bindings, "local_controls": self.local_controls})
 
     def begin_binding(self, action):
         self.binding_action = action
         self.binding_message = "Pressione a nova tecla. Esc: cancelar."
         self.options()
 
+    def release_key(self, button):
+        key = button if isinstance(button, str) else button.getName()
+        self.set_key(key, False)
+
     def capture_key(self, button):
+        key = button if isinstance(button, str) else button.getName()
+        self.set_key(key, True)
+        if self.mode == "local_controls" and self.local_binding:
+            if key == "escape":
+                self.local_binding = None
+            else:
+                try:
+                    self.local_controls = replace_local_key(self.local_controls, self.local_team, self.local_binding, key)
+                except ValueError:
+                    self.binding_message = "Tecla reservada. Escolha outra."
+                else:
+                    self.local_binding = None
+                    self.binding_message = "Configuração substituída e salva"
+                    self.save_settings()
+            self.local_controls_menu(self.local_team)
+            return
         if self.mode != "options" or self.binding_action is None:
             return
         key = button if isinstance(button, str) else button.getName()
@@ -618,17 +647,178 @@ class Game(ShowBase):
         self.ui.append(self.menu_coins_label)
         self.button("Novo jogo", 0.09, self.new_game)
         self.button("Continuar", -0.12, self.continue_game, saved_player is not None)
-        self.button("Opções", -0.33, self.options)
-        self.button("Sair", -0.54, self.userExit)
-        self.label(self.storage.last_error or "WASD / setas | Shift para correr", -0.70, 0.035)
+        self.button("Dois jogadores", -0.33, self.two_player_menu)
+        self.button("Opções", -0.54, self.options)
+        self.button("Sair", -0.75, self.userExit)
+        self.label(self.storage.last_error or "WASD / setas | Shift para correr", -0.94, 0.035)
+
+    def two_player_menu(self):
+        self.mode = "two_players"
+        self.local_binding = None
+        self.keys.clear()
+        self.panel()
+        self.label("CAPTURE A BANDEIRA", 0.43, 0.07)
+        self.label("Verde × Azul — primeiro a 3 capturas", 0.31, 0.043)
+        self.button("Jogar", 0.10, self.new_capture)
+        self.button("Retomar partida", -0.10, self.resume_capture, self.capture_match is not None)
+        self.button("Configurar Verde", -0.32, lambda: self.local_controls_menu(0), x=-0.76)
+        self.button("Configurar Azul", -0.32, lambda: self.local_controls_menu(1), x=0.76)
+        self.button("Controle USB", -0.55, self.controller_options, x=-0.76)
+        self.button("Voltar", -0.55, self.main_menu, x=0.76)
+        self.label("USB controla Verde; Azul usa suas teclas configuradas", -0.82, 0.041)
+
+    def local_controls_menu(self, team):
+        self.mode = "local_controls"
+        self.local_team = team
+        self.keys.clear()
+        self.panel()
+        self.label("CONTROLES — " + ("VERDE" if team == 0 else "AZUL"), 0.43, 0.07)
+        for index, (action, title) in enumerate(LOCAL_ACTIONS.items()):
+            column, row = index // 4, index % 4
+            self.button(title + ": " + key_label(self.local_controls[team][action]),
+                        0.19 - row * 0.20,
+                        lambda action=action: self.begin_local_binding(action),
+                        x=-0.76 if column == 0 else 0.76, width=0.69, scale=0.052)
+        self.button("Voltar", -0.70, self.two_player_menu)
+        self.label("Pressione a nova tecla; Esc cancela" if self.local_binding
+                   else self.binding_message or "Selecione a ação para substituir a tecla", -0.90, 0.04)
+
+    def begin_local_binding(self, action):
+        self.local_binding = action
+        self.local_controls_menu(self.local_team)
+
+    def close_capture(self):
+        for node in self.capture_nodes:
+            node.removeNode()
+        self.capture_nodes = []
+        self.capture_match = None
+        self.actor.clearColorScale()
+        self.actor.show()
+        self.sprite.show()
+        self.shadow.show()
+
+    def new_capture(self):
+        self.close_capture()
+        self.capture_match = CaptureMatch()
+        self.player = self.capture_match.players[0]
+        self.player.phase = 0
+        self.apply_phase()
+        self.second_actor = self.actor.copyTo(self.render)
+        self.second_sprite = self.second_actor.find("**/rider-sprite")
+        self.second_actor.setColorScale(0.55, 0.75, 1, 1)
+        self.capture_nodes.append(self.second_actor)
+        self.capture_flags = []
+        for team, flag in enumerate(self.capture_match.flags):
+            root = self.render.attachNewNode("bandeira-" + str(team))
+            pole = CardMaker("poste")
+            pole.setFrame(-0.06, 0.06, 0, 4)
+            node = root.attachNewNode(pole.generate())
+            node.setColor(0.8, 0.8, 0.8, 1)
+            node.setTwoSided(True)
+            cloth = CardMaker("bandeira")
+            cloth.setFrame(0, 2, 2.5, 4)
+            node = root.attachNewNode(cloth.generate())
+            node.setColor(*( (0.1, 0.95, 0.25, 1) if team == 0 else (0.12, 0.4, 1, 1)))
+            node.setTwoSided(True)
+            self.capture_flags.append(root)
+            self.capture_nodes.append(root)
+        self.local_previous = [{}, {}]
+        self.resume_capture()
+
+    def resume_capture(self):
+        if self.capture_match is None:
+            return
+        self.mode = "capture"
+        self.local_binding = None
+        self.keys.clear()
+        self.set_mouse_capture(False)
+        self.clear_ui()
+        self.capture_score = DirectLabel(parent=self.a2dTopCenter,
+            text_font=self.body_font, text="", text_scale=0.058,
+            text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1),
+            frameColor=(0, 0, 0, 0), pos=(0, 0, -0.12))
+        self.ui.append(self.capture_score)
+        for node in self.enemy_nodes + self.enemy_bars + self.coin_nodes + self.heart_nodes + self.clock_nodes:
+            node.hide()
+        self.sprite.show()
+        self.shadow.show()
+        self.update_capture(0, {})
+
+    def update_capture(self, dt, pad):
+        match = self.capture_match
+        for team, player in enumerate(match.players):
+            actions = {action: bool(self.keys.get(key, False) or (team == 0 and pad.get(action, False)))
+                       for action, key in self.local_controls[team].items()}
+            edges = {action for action, pressed in actions.items()
+                     if pressed and not self.local_previous[team].get(action, False)}
+            self.local_previous[team] = actions
+            if match.winner is None:
+                if "jump" in edges:
+                    jump_player(player)
+                if "attack" in edges:
+                    match.attack(team)
+                update_player_actions(player, dt)
+                heading = math.degrees(math.atan2(player.x - self.camera.getX(), player.y - self.camera.getY()))
+                dx, dy = relative_movement(int(actions['right']) - int(actions['left']),
+                                          int(actions['up']) - int(actions['down']), heading)
+                old_x, old_y = player.x, player.y
+                player.move(dx, dy, actions['run'], dt)
+                move_on_terrain(player, old_x, old_y, [])
+                if player.health <= 0:
+                    for flag in match.flags:
+                        if flag.carrier == team:
+                            flag.reset()
+                    player.x, player.y = match.bases[team]
+                    player.health = 5
+                    player.z = player.vertical_speed = 0
+            actor = self.actor if team == 0 else self.second_actor
+            sprite = self.sprite if team == 0 else self.second_sprite
+            ground = player_ground_height(player.x, player.y)
+            actor.setPos(player.x, player.y, ground)
+            sprite.setZ(player.z)
+            row = (player.direction - round(math.atan2(player.x - self.camera.getX(),
+                                                       player.y - self.camera.getY()) / (math.pi / 4))) % 8
+            sprite.setTexture(self.textures[row, player.frame])
+        self.actor.setColorScale(0.65, 1, 0.65, 1)
+        match.update()
+        for flag, node in zip(match.flags, self.capture_flags):
+            height = terrain_height(flag.x, flag.y)
+            if flag.carrier is not None:
+                height += match.players[flag.carrier].z + 1
+            node.setPos(flag.x, flag.y, height)
+        first, second = match.players
+        mx, my = (first.x + second.x) / 2, (first.y + second.y) / 2
+        distance = math.hypot(first.x - second.x, first.y - second.y)
+        radius = max(20, distance * 1.2)
+        ground = max(player_ground_height(p.x, p.y) + p.z for p in match.players)
+        self.camera.setPos(mx, my - radius, ground + 7 + radius * 0.18)
+        self.camera.lookAt(mx, my, ground + 1.5)
+        self.sky.setPos(mx, my, ground)
+        for obstacle, node in zip(self.camera_obstacles, self.camera_obstacle_nodes):
+            obscures = any(segment_box_hit(tuple(self.camera.getPos()),
+                            (p.x, p.y, player_ground_height(p.x, p.y) + p.z + 1.5), obstacle)
+                           for p in match.players)
+            if obscures:
+                node.setTransparency(TransparencyAttrib.MAlpha)
+                node.setColorScale(1, 1, 1, 0.15)
+                node.setDepthWrite(False)
+            else:
+                node.clearColorScale()
+                node.clearTransparency()
+                node.clearDepthWrite()
+        self.capture_score['text'] = f"VERDE {match.scores[0]}  ×  {match.scores[1]} AZUL"
+        if match.winner is not None:
+            self.capture_score['text'] += " — " + ("VERDE" if match.winner == 0 else "AZUL") + " VENCEU"
 
     def new_game(self, difficulty=None):
+        self.close_capture()
         self.player = Player(difficulty=difficulty or self.difficulty)
         self.encounter = Encounter(difficulty=self.player.difficulty)
         self.save()
         self.start_game()
 
     def continue_game(self):
+        self.close_capture()
         player = self.storage.load_player()
         if player is not None:
             self.player = player
@@ -904,7 +1094,7 @@ class Game(ShowBase):
             self.binding_message = "Escolha cancelada."
             self.options()
             return
-        if self.mode in ("playing", "options", "victory", "defeat"):
+        if self.mode in ("playing", "capture", "two_players", "local_controls", "options", "victory", "defeat"):
             self.main_menu()
         else:
             self.continue_game()
@@ -1030,7 +1220,7 @@ class Game(ShowBase):
         fresh = {action for action, pressed in actions.items()
                  if pressed and not self.menu_previous_actions.get(action)}
         self.menu_previous_actions = actions
-        if self.mode in ("playing", "victory") or self.pending_gamepad_action or self.menu_input_block > 0:
+        if self.mode in ("playing", "capture", "victory") or self.pending_gamepad_action or self.local_binding or self.menu_input_block > 0:
             return
         buttons = [item for item in self.ui if isinstance(item, DirectButton) and item['state'] != 'disabled']
         if not buttons:
@@ -1067,9 +1257,12 @@ class Game(ShowBase):
         self.camera_switch_cooldown = max(0.0, self.camera_switch_cooldown - elapsed)
         self.menu_input_block = max(0.0, self.menu_input_block - elapsed)
         pad, pad_edges = self.poll_gamepad(elapsed)
-        if "menu" in pad_edges and self.mode in ("playing", "victory"):
+        if "menu" in pad_edges and self.mode in ("playing", "capture", "victory"):
             self.main_menu()
         self.navigate_menu(pad, elapsed)
+        if self.mode == "capture":
+            self.update_capture(dt, pad)
+            return task.cont
         if self.mode in ("playing", "victory"):
             if self.mode == "playing":
                 self.player.advance_match_time(elapsed)

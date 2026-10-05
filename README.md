@@ -158,3 +158,17 @@ Se aparecer `/dev/input/event13 is not readable`, o Linux está negando leitura 
 A fonte dos textos comuns é DejaVu Sans Mono Bold, incluída em `assets/fonts/menu-mono.ttf` com a licença ao lado. O título continua com Goblin Digital e os números continuam em sete segmentos brancos.
 
 O botão configurado como **Menu (Start)** pausa a partida e abre o menu. Use o direcional para navegar e **Selecionar (B)** para escolher. A alternância com F tem intervalo mínimo de 0,35 segundo para evitar mudanças repetidas.
+
+## Dois jogadores — capture a bandeira
+
+No menu principal, escolha **Dois jogadores → Jogar**. As equipes são **Verde** e **Azul**. Pegue a bandeira adversária e volte à sua base com a própria bandeira em casa. Primeiro a **3 capturas** vence. Ataque o adversário de perto e pela frente para devolvê-lo à base; a bandeira carregada cai no chão. Toque na sua bandeira caída para devolvê-la.
+
+**Configurar Verde** e **Configurar Azul** permitem substituir as teclas de cada ação. Uma tecla ocupada troca de lugar com a anterior, inclusive entre jogadores. Padrões: Verde usa WASD, espaço, Shift e X; Azul usa setas, Enter, Ctrl e M. O controle USB configurado também controla Verde. A câmera compartilhada acompanha ambos; cada direcional segue a visão da câmera em relação ao respectivo personagem. FPS com F continua disponível na caça de um jogador.
+
+**Start** ou **Esc** pausam e abrem o menu. Para continuar a partida local, escolha **Dois jogadores → Retomar partida**. A caça salva permanece preservada. Partidas locais ficam disponíveis durante a sessão do jogo.
+
+![Menu de dois jogadores](docs/images/dois-jogadores-menu.png)
+
+![Dois jogadores capturando bandeiras](docs/images/dois-jogadores.gif)
+
+Para regenerar prints e GIF: `.venv/bin/python tools/capture_local_preview.py`. Captura offscreen; interação com dois jogadores e controle real precisa ser conferida no computador do jogador.

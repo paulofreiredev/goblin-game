@@ -111,7 +111,7 @@ def test_menu_game_options_and_resume(tmp_path):
         game.toggle_sound()
         assert not game.sound_enabled
         assert game.music.status() != AudioSound.PLAYING
-        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x', 'difficulty': 'medium', 'gamepad_bindings': game.gamepad_bindings}
+        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x', 'difficulty': 'medium', 'gamepad_bindings': game.gamepad_bindings, 'local_controls': game.local_controls}
         game.toggle_sound()
         assert game.sound_enabled
         game.main_menu()
@@ -587,5 +587,67 @@ def test_usb_start_menu_navigation_confirmation_and_camera_delay(tmp_path):
         device.buttons[0].pressed = True
         game.taskMgr.step()
         assert game.mode == 'playing'
+    finally:
+        game.destroy()
+
+
+def test_two_players_controls_pause_resume_and_solo_save(tmp_path):
+    from panda3d.core import ClockObject, loadPrcFileData
+    from direct.gui.DirectGui import DirectButton
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        assert any(isinstance(item, DirectButton) and item['text'] == 'Dois jogadores' for item in game.ui)
+        game.new_game()
+        game.player.coins = 9
+        game.main_menu()
+        saved = game.storage.read('save.json')
+        game.two_player_menu()
+        game.new_capture()
+        assert game.mode == 'capture'
+        assert len(game.capture_match.players) == 2
+        assert len(game.capture_flags) == 2
+        clock = ClockObject.getGlobalClock()
+        clock.setMode(ClockObject.MNonRealTime)
+        clock.setDt(1 / 60)
+        first, second = game.capture_match.players
+        second_position = second.x, second.y
+        first_position = first.x, first.y
+        game.set_key('w', True)
+        game.taskMgr.step()
+        assert (first.x, first.y) != first_position
+        assert (second.x, second.y) == second_position
+        game.keys.clear()
+        first_position = first.x, first.y
+        game.set_key('arrow_up', True)
+        game.taskMgr.step()
+        assert (first.x, first.y) == first_position
+        assert (second.x, second.y) != second_position
+        game.local_controls_menu(1)
+        game.begin_local_binding('jump')
+        game.capture_key('n')
+        assert game.local_controls[1]['jump'] == 'n'
+        device = fake_gamepad()
+        game.gamepad_device = device
+        game.gamepad_scan_time = 1000
+        game.resume_capture()
+        session = game.capture_match
+        device.buttons[7].pressed = True
+        game.taskMgr.step()
+        assert game.mode == 'menu'
+        positions = [(p.x, p.y) for p in session.players]
+        game.taskMgr.step()
+        assert positions == [(p.x, p.y) for p in session.players]
+        game.two_player_menu()
+        game.resume_capture()
+        assert game.mode == 'capture' and game.capture_match is session
+        game.main_menu()
+        assert game.storage.read('save.json') == saved
+        game.continue_game()
+        assert game.mode == 'playing' and game.player.coins == 9
+        assert game.capture_match is None
+        game.graphicsEngine.renderFrame()
     finally:
         game.destroy()
