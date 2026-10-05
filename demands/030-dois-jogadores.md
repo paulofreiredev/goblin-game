@@ -51,3 +51,7 @@ Pendente.
 Implementados game/capture.py, integração/menu/configuração em game/app.py, tests/test_capture.py, teste de integração em tests/test_app.py e tools/capture_local_preview.py. Comando: `RUN_GRAPHICS_TESTS=1 .venv/bin/python -m pytest -q`: **114 passaram em 19,46 s**. Verificados pickup/captura/vitória, exigência da própria bandeira em casa, ataque/frente/distância/recarga, troca de controles entre equipes, movimento independente, pausa Start/retomada e preservação do save solo. Captura offscreen e inspeção de docs/images/dois-jogadores.png confirmam bandeiras verde/azul e duas personagens; GIF de 2,5 s gerado com ambas andando. README atualizado.
 
 Revisão: fluxo de entrada/saída, save solo e configurações conferidos. Sem achado bloqueante nos testes. **Parecer: Validação pendente** pela ausência de janela interativa e hardware USB neste ambiente. Roteiro manual: selecionar dois jogadores, remapear ambas equipes, jogar uma captura, atacar, pausar por Start, retomar com direcional/B e concluir três capturas; abrir caça salva depois. Não declarar esse roteiro executado.
+
+## Refinamento posterior
+
+As regras de captura em base e câmera compartilhada desta demanda foram substituídas pelo pedido explícito posterior registrado em 032: coleta por cor, 3/8/12 bandeiras aleatórias, split horizontal e dois USB configuráveis. Consulte 032 para comportamento final.

@@ -11,7 +11,7 @@ from panda3d.core import (
     CardMaker, Filename, Fog, PNMImage, TextNode, Texture,
     TransparencyAttrib, Vec3, StringStream, AmbientLight, DirectionalLight,
     Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter,
-    InputDevice, InputDeviceManager, WindowProperties, loadPrcFileData,
+    InputDevice, InputDeviceManager, WindowProperties, BitMask32, loadPrcFileData,
 )
 
 from game.capture import CaptureMatch, LOCAL_ACTIONS, load_local_controls, replace_local_key
@@ -70,6 +70,7 @@ def pickup_geometry(name, outline):
 class Game(ShowBase):
     def __init__(self, *, offscreen=False, storage_directory=None):
         super().__init__(windowType="offscreen" if offscreen else None)
+        self.original_camera_mask = self.cam.node().getCameraMask()
         self.disableMouse()
         self.ui_font = self.loader.loadFont(str(ROOT / "assets/fonts/goblin-digital.ttf"))
         self.body_font = self.loader.loadFont(str(ROOT / "assets/fonts/menu-mono.ttf"))
@@ -88,6 +89,11 @@ class Game(ShowBase):
         self.capture_nodes = []
         self.local_previous = [{}, {}]
         self.gamepad_device = None
+        self.second_gamepad_device = None
+        self.second_gamepad_bindings = load_bindings({"gamepad_bindings": settings.get("second_gamepad_bindings")})
+        self.second_gamepad_previous = {}
+        self.controller_team = 0
+        self.second_camera = None
         self.gamepad_previous = {}
         self.gamepad_scan_time = 0.0
         self.pending_gamepad_action = None
@@ -160,7 +166,7 @@ class Game(ShowBase):
     def save_settings(self):
         return self.storage.write("settings.json", {"sound": self.sound_enabled,
                                   "jump_key": self.jump_key, "attack_key": self.attack_key, "difficulty": self.difficulty,
-                                  "gamepad_bindings": self.gamepad_bindings, "local_controls": self.local_controls})
+                                  "gamepad_bindings": self.gamepad_bindings, "local_controls": self.local_controls, "second_gamepad_bindings": self.second_gamepad_bindings})
 
     def begin_binding(self, action):
         self.binding_action = action
@@ -656,14 +662,21 @@ class Game(ShowBase):
         self.keys.clear()
         self.panel()
         self.label("CAPTURE A BANDEIRA", 0.43, 0.07)
-        self.label("Verde × Azul — primeiro a 3 capturas", 0.31, 0.043)
-        self.button("Jogar", 0.10, self.new_capture)
+        self.label("Encontre todas as bandeiras da sua cor", 0.31, 0.043)
+        self.button("Jogar", 0.10, self.new_capture, x=-0.76)
+        self.button("Nível: " + DIFFICULTIES[self.difficulty][0], 0.10, self.cycle_local_difficulty, x=0.76)
         self.button("Retomar partida", -0.10, self.resume_capture, self.capture_match is not None)
         self.button("Configurar Verde", -0.32, lambda: self.local_controls_menu(0), x=-0.76)
         self.button("Configurar Azul", -0.32, lambda: self.local_controls_menu(1), x=0.76)
-        self.button("Controle USB", -0.55, self.controller_options, x=-0.76)
+        self.button("USB Verde / Azul", -0.55, lambda: self.controller_options(team=0), x=-0.76)
         self.button("Voltar", -0.55, self.main_menu, x=0.76)
-        self.label("USB controla Verde; Azul usa suas teclas configuradas", -0.82, 0.041)
+        self.label("Dois controles USB ou teclados — sem limite de tempo", -0.82, 0.041)
+
+    def cycle_local_difficulty(self):
+        modes = list(DIFFICULTIES)
+        self.difficulty = modes[(modes.index(self.difficulty) + 1) % len(modes)]
+        self.save_settings()
+        self.two_player_menu()
 
     def local_controls_menu(self, team):
         self.mode = "local_controls"
@@ -686,6 +699,17 @@ class Game(ShowBase):
         self.local_controls_menu(self.local_team)
 
     def close_capture(self):
+        if self.second_camera is not None:
+            for region in list(self.second_camera.node().getDisplayRegions()):
+                self.win.removeDisplayRegion(region)
+            if self.second_camera in self.camList:
+                self.camList.remove(self.second_camera)
+            self.second_camera.removeNode()
+            self.second_camera = None
+            self.cam.node().getDisplayRegion(0).setDimensions(0, 1, 0, 1)
+            self.camLens.setAspectRatio(self.getAspectRatio())
+            self.camLens.setFov(75 if self.camera_mode == "first_person" else 60)
+            self.cam.node().setCameraMask(self.original_camera_mask)
         for node in self.capture_nodes:
             node.removeNode()
         self.capture_nodes = []
@@ -697,7 +721,7 @@ class Game(ShowBase):
 
     def new_capture(self):
         self.close_capture()
-        self.capture_match = CaptureMatch()
+        self.capture_match = CaptureMatch(difficulty=self.difficulty)
         self.player = self.capture_match.players[0]
         self.player.phase = 0
         self.apply_phase()
@@ -706,8 +730,13 @@ class Game(ShowBase):
         self.second_actor.setColorScale(0.55, 0.75, 1, 1)
         self.capture_nodes.append(self.second_actor)
         self.capture_flags = []
-        for team, flag in enumerate(self.capture_match.flags):
-            root = self.render.attachNewNode("bandeira-" + str(team))
+        for index, flag in enumerate(self.capture_match.flags):
+            team = flag.team
+            root = self.render.attachNewNode("bandeira-" + str(index))
+            # Poste de 4 unidades: metade da altura de 3,41 do sprite.
+            root.setScale(0.42625)
+            root.setBillboardAxis()
+            root.setLightOff()
             pole = CardMaker("poste")
             pole.setFrame(-0.06, 0.06, 0, 4)
             node = root.attachNewNode(pole.generate())
@@ -721,6 +750,18 @@ class Game(ShowBase):
             self.capture_flags.append(root)
             self.capture_nodes.append(root)
         self.local_previous = [{}, {}]
+        self.local_camera_mode = "third_person"
+        self.cam.node().setCameraMask(BitMask32.bit(0))
+        self.cam.node().getDisplayRegion(0).setDimensions(0, 1, 0.5, 1)
+        self.camLens.setAspectRatio(self.getAspectRatio() * 2)
+        self.camLens.setFov(90)
+        lens = self.camLens.makeCopy()
+        self.second_camera = self.makeCamera(self.win, displayRegion=(0, 1, 0, 0.5), lens=lens)
+        self.second_camera.reparentTo(self.render)
+        self.second_camera.node().setCameraMask(BitMask32.bit(1))
+        self.local_headings = [90.0, 270.0]
+        for player, heading in zip(self.capture_match.players, self.local_headings):
+            player.direction = facing_direction(heading)
         self.resume_capture()
 
     def resume_capture(self):
@@ -731,21 +772,27 @@ class Game(ShowBase):
         self.keys.clear()
         self.set_mouse_capture(False)
         self.clear_ui()
-        self.capture_score = DirectLabel(parent=self.a2dTopCenter,
-            text_font=self.body_font, text="", text_scale=0.058,
-            text_fg=(1, 1, 1, 1), text_shadow=(0, 0, 0, 1),
-            frameColor=(0, 0, 0, 0), pos=(0, 0, -0.12))
-        self.ui.append(self.capture_score)
+        self.capture_scores = []
+        for team in range(2):
+            label = DirectLabel(parent=self.a2dTopCenter, text_font=self.body_font,
+                text="", text_scale=0.045, text_fg=(1, 1, 1, 1),
+                text_shadow=(0, 0, 0, 1), frameColor=(0, 0, 0, 0), pos=(0, 0, -0.10 - team))
+            self.capture_scores.append(label)
+            self.ui.append(label)
+        self.capture_score = self.capture_scores[0]
+        self.ui.append(DirectFrame(parent=self.render2d, frameColor=(0.01, 0.02, 0.03, 1),
+                                   frameSize=(-1, 1, -0.005, 0.005)))
         for node in self.enemy_nodes + self.enemy_bars + self.coin_nodes + self.heart_nodes + self.clock_nodes:
             node.hide()
         self.sprite.show()
         self.shadow.show()
         self.update_capture(0, {})
 
-    def update_capture(self, dt, pad):
+    def update_capture(self, dt, pad, second_pad=None):
+        pads = [pad, second_pad or {}]
         match = self.capture_match
         for team, player in enumerate(match.players):
-            actions = {action: bool(self.keys.get(key, False) or (team == 0 and pad.get(action, False)))
+            actions = {action: bool(self.keys.get(key, False) or pads[team].get(action, False))
                        for action, key in self.local_controls[team].items()}
             edges = {action for action, pressed in actions.items()
                      if pressed and not self.local_previous[team].get(action, False)}
@@ -756,16 +803,15 @@ class Game(ShowBase):
                 if "attack" in edges:
                     match.attack(team)
                 update_player_actions(player, dt)
-                heading = math.degrees(math.atan2(player.x - self.camera.getX(), player.y - self.camera.getY()))
+                self.local_headings[team] = (self.local_headings[team] + 120 * dt *
+                    (int(pads[team].get('look_right', False)) - int(pads[team].get('look_left', False)))) % 360
+                heading = self.local_headings[team]
                 dx, dy = relative_movement(int(actions['right']) - int(actions['left']),
                                           int(actions['up']) - int(actions['down']), heading)
                 old_x, old_y = player.x, player.y
                 player.move(dx, dy, actions['run'], dt)
                 move_on_terrain(player, old_x, old_y, [])
                 if player.health <= 0:
-                    for flag in match.flags:
-                        if flag.carrier == team:
-                            flag.reset()
                     player.x, player.y = match.bases[team]
                     player.health = 5
                     player.z = player.vertical_speed = 0
@@ -774,26 +820,38 @@ class Game(ShowBase):
             ground = player_ground_height(player.x, player.y)
             actor.setPos(player.x, player.y, ground)
             sprite.setZ(player.z)
-            row = (player.direction - round(math.atan2(player.x - self.camera.getX(),
-                                                       player.y - self.camera.getY()) / (math.pi / 4))) % 8
+            row = (player.direction - round(self.local_headings[team] / 45)) % 8
             sprite.setTexture(self.textures[row, player.frame])
         self.actor.setColorScale(0.65, 1, 0.65, 1)
         match.update()
         for flag, node in zip(match.flags, self.capture_flags):
+            if flag.captured:
+                node.hide()
+                continue
             height = terrain_height(flag.x, flag.y)
-            if flag.carrier is not None:
-                height += match.players[flag.carrier].z + 1
             node.setPos(flag.x, flag.y, height)
-        first, second = match.players
-        mx, my = (first.x + second.x) / 2, (first.y + second.y) / 2
-        distance = math.hypot(first.x - second.x, first.y - second.y)
-        radius = max(20, distance * 1.2)
-        ground = max(player_ground_height(p.x, p.y) + p.z for p in match.players)
-        self.camera.setPos(mx, my - radius, ground + 7 + radius * 0.18)
-        self.camera.lookAt(mx, my, ground + 1.5)
-        self.sky.setPos(mx, my, ground)
+        for team, player in enumerate(match.players):
+            camera = self.camera if team == 0 else self.second_camera
+            angle = math.radians(self.local_headings[team])
+            foot = player_ground_height(player.x, player.y) + player.z
+            desired = (player.x - math.sin(angle) * 12, player.y - math.cos(angle) * 12, foot + 4.5)
+            actor = self.actor if team == 0 else self.second_actor
+            if self.local_camera_mode == "first_person":
+                actor.hide(BitMask32.bit(team))
+                camera.setPos(player.x, player.y, foot + 2)
+                camera.lookAt(player.x + math.sin(angle), player.y + math.cos(angle), foot + 2)
+            else:
+                actor.show(BitMask32.bit(team))
+                position = third_person_position((player.x, player.y, foot), desired, self.camera_obstacles, terrain_height)
+                camera.setPos(*position)
+                camera.lookAt(player.x, player.y, foot + 1.8)
+            if self.local_camera_mode == "third_person":
+                self.local_headings[team] = math.degrees(math.atan2(player.x - camera.getX(), player.y - camera.getY())) % 360
+        self.sky.setPos(match.players[0].x, match.players[0].y, 0)
         for obstacle, node in zip(self.camera_obstacles, self.camera_obstacle_nodes):
             obscures = any(segment_box_hit(tuple(self.camera.getPos()),
+                            (p.x, p.y, player_ground_height(p.x, p.y) + p.z + 1.5), obstacle)
+                           for p in match.players) or any(segment_box_hit(tuple(self.second_camera.getPos()),
                             (p.x, p.y, player_ground_height(p.x, p.y) + p.z + 1.5), obstacle)
                            for p in match.players)
             if obscures:
@@ -804,9 +862,10 @@ class Game(ShowBase):
                 node.clearColorScale()
                 node.clearTransparency()
                 node.clearDepthWrite()
-        self.capture_score['text'] = f"VERDE {match.scores[0]}  ×  {match.scores[1]} AZUL"
-        if match.winner is not None:
-            self.capture_score['text'] += " — " + ("VERDE" if match.winner == 0 else "AZUL") + " VENCEU"
+        for team, label in enumerate(self.capture_scores):
+            label['text'] = ("VERDE" if team == 0 else "AZUL") + f" {match.scores[team]}/{match.flag_count}"
+            if match.winner is not None:
+                label['text'] += " — " + ("VERDE" if match.winner == 0 else "AZUL") + " VENCEU"
 
     def new_game(self, difficulty=None):
         self.close_capture()
@@ -986,31 +1045,53 @@ class Game(ShowBase):
         devices = InputDeviceManager.getGlobalPtr().getDevices()
         candidates = [device for device in devices if device.connected and device.device_class in
                       (InputDevice.DeviceClass.gamepad, InputDevice.DeviceClass.unknown)]
-        device = next((item for item in candidates if item == self.gamepad_device), None)
-        device = device or (candidates[0] if candidates else None)
-        if device != self.gamepad_device:
-            self.gamepad_device = device
+        available = candidates.copy()
+        device = next((item for item in available if item == self.gamepad_device), None)
+        fallback = [item for item in available if item != self.second_gamepad_device]
+        device = device or (fallback[0] if fallback else None)
+        available = [item for item in available if item != device]
+        second = next((item for item in available if item == self.second_gamepad_device), None)
+        second = second or (available[0] if available else None)
+        changed = device != self.gamepad_device or second != self.second_gamepad_device
+        if changed:
+            self.gamepad_device, self.second_gamepad_device = device, second
             self.gamepad_previous = {}
+            self.second_gamepad_previous = {}
             self.pending_gamepad_action = None
             self.gamepad_baseline = set()
             if self.mode == "controller_options":
                 self.controller_options(scan=False)
 
-    def controller_options(self, *, scan=True):
+    def configured_device(self):
+        return self.gamepad_device if self.controller_team == 0 else self.second_gamepad_device
+
+    def configured_bindings(self):
+        return self.gamepad_bindings if self.controller_team == 0 else self.second_gamepad_bindings
+
+    def switch_controller_team(self):
+        self.pending_gamepad_action = None
+        self.gamepad_message = ""
+        self.controller_options(scan=False, team=1 - self.controller_team)
+
+    def controller_options(self, *, scan=True, team=None):
+        if team is not None:
+            self.controller_team = team
         self.set_mouse_capture(False)
         self.keys.clear()
         if scan:
             self.scan_gamepad()
         self.mode = "controller_options"
         self.panel()
-        self.label("CONTROLE USB", 0.47, 0.07)
-        connected = self.gamepad_device is not None and self.gamepad_device.connected
-        name = self.gamepad_device.name if connected else "Nenhum controle USB detectado"
+        self.button("USB " + ("VERDE" if self.controller_team == 0 else "AZUL") + " — trocar jogador",
+                    0.47, self.switch_controller_team, width=1.0, scale=0.045, compact=True)
+        device = self.configured_device()
+        connected = device is not None and device.connected
+        name = device.name if connected else "Nenhum controle USB detectado"
         self.label(name[:60], 0.35, 0.042)
         for index, (action, title) in enumerate(GAMEPAD_ACTIONS.items()):
             column, row = ((0, index) if index < 4 else
                            (0, index - 5) if index >= 9 else (1, index - 4))
-            text = f"{title}: {binding_label(self.gamepad_bindings[action])}"
+            text = f"{title}: {binding_label(self.configured_bindings()[action])}"
             self.button(text, 0.20 - row * 0.17,
                         lambda action=action: self.begin_gamepad_binding(action), connected,
                         x=-0.78 if column == 0 else 0.78, width=0.70, scale=0.053, compact=True)
@@ -1027,12 +1108,13 @@ class Game(ShowBase):
         self.options()
 
     def begin_gamepad_binding(self, action):
-        if self.gamepad_device is None or not self.gamepad_device.connected:
+        device = self.configured_device()
+        if device is None or not device.connected:
             return
         self.pending_gamepad_action = action
         self.menu_input_block = 0.25
         self.gamepad_message = ""
-        self.gamepad_baseline = read_device(self.gamepad_device)
+        self.gamepad_baseline = read_device(device)
         self.controller_options(scan=False)
 
     def poll_gamepad(self, elapsed):
@@ -1042,12 +1124,17 @@ class Game(ShowBase):
             self.scan_gamepad()
         active = read_device(self.gamepad_device)
         if self.mode == "controller_options" and self.pending_gamepad_action:
-            fresh = active - self.gamepad_baseline
-            self.gamepad_baseline.intersection_update(active)
+            capture_active = read_device(self.configured_device())
+            fresh = capture_active - self.gamepad_baseline
+            self.gamepad_baseline.intersection_update(capture_active)
             if fresh:
                 binding = sorted(fresh)[0]
                 action = self.pending_gamepad_action
-                self.gamepad_bindings = replace_binding(self.gamepad_bindings, action, binding)
+                bindings = replace_binding(self.configured_bindings(), action, binding)
+                if self.controller_team == 0:
+                    self.gamepad_bindings = bindings
+                else:
+                    self.second_gamepad_bindings = bindings
                 self.save_settings()
                 self.pending_gamepad_action = None
                 self.menu_input_block = 0.25
@@ -1057,6 +1144,10 @@ class Game(ShowBase):
         edges = {action for action, pressed in actions.items()
                  if pressed and not self.gamepad_previous.get(action, False)}
         self.gamepad_previous = actions
+        second_actions = mapped_actions(read_device(self.second_gamepad_device), self.second_gamepad_bindings)
+        self.second_gamepad_edges = {action for action, pressed in second_actions.items()
+                                    if pressed and not self.second_gamepad_previous.get(action, False)}
+        self.second_gamepad_previous = second_actions
         return actions, edges
 
     def cycle_difficulty(self):
@@ -1159,6 +1250,11 @@ class Game(ShowBase):
                                        self.player.y - self.camera.getY())) + 360) % 360
 
     def toggle_camera(self):
+        if self.mode == "capture" and self.camera_switch_cooldown <= 0:
+            self.camera_switch_cooldown = 0.35
+            self.local_camera_mode = "first_person" if self.local_camera_mode == "third_person" else "third_person"
+            self.update_capture(0, {}, {})
+            return
         if self.mode not in ("playing", "victory") or self.camera_switch_cooldown > 0:
             return
         self.camera_switch_cooldown = 0.35
@@ -1262,11 +1358,12 @@ class Game(ShowBase):
         self.camera_switch_cooldown = max(0.0, self.camera_switch_cooldown - elapsed)
         self.menu_input_block = max(0.0, self.menu_input_block - elapsed)
         pad, pad_edges = self.poll_gamepad(elapsed)
-        if "menu" in pad_edges and self.mode in ("playing", "capture", "victory"):
+        if "menu" in (pad_edges | self.second_gamepad_edges) and self.mode in ("playing", "capture", "victory"):
             self.main_menu()
-        self.navigate_menu(pad, elapsed)
+        menu_pad = {action: pad.get(action, False) or self.second_gamepad_previous.get(action, False) for action in GAMEPAD_ACTIONS}
+        self.navigate_menu(menu_pad, elapsed)
         if self.mode == "capture":
-            self.update_capture(dt, pad)
+            self.update_capture(dt, pad, self.second_gamepad_previous)
             return task.cont
         if self.mode in ("playing", "victory"):
             if self.mode == "playing":

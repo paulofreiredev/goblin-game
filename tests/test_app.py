@@ -111,7 +111,7 @@ def test_menu_game_options_and_resume(tmp_path):
         game.toggle_sound()
         assert not game.sound_enabled
         assert game.music.status() != AudioSound.PLAYING
-        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x', 'difficulty': 'medium', 'gamepad_bindings': game.gamepad_bindings, 'local_controls': game.local_controls}
+        assert game.storage.read('settings.json') == {'sound': False, 'jump_key': 'space', 'attack_key': 'x', 'difficulty': 'medium', 'gamepad_bindings': game.gamepad_bindings, 'local_controls': game.local_controls, 'second_gamepad_bindings': game.second_gamepad_bindings}
         game.toggle_sound()
         assert game.sound_enabled
         game.main_menu()
@@ -608,7 +608,7 @@ def test_two_players_controls_pause_resume_and_solo_save(tmp_path):
         game.new_capture()
         assert game.mode == 'capture'
         assert len(game.capture_match.players) == 2
-        assert len(game.capture_flags) == 2
+        assert len(game.capture_flags) == game.capture_match.flag_count * 2
         clock = ClockObject.getGlobalClock()
         clock.setMode(ClockObject.MNonRealTime)
         clock.setDt(1 / 60)
@@ -654,5 +654,103 @@ def test_two_players_controls_pause_resume_and_solo_save(tmp_path):
         assert game.mode == 'playing' and game.player.coins == 9
         assert game.capture_match is None
         game.graphicsEngine.renderFrame()
+    finally:
+        game.destroy()
+
+
+def test_split_two_usb_configurations_flags_victory_and_restored_camera(tmp_path):
+    from panda3d.core import ClockObject, loadPrcFileData
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        first_usb, second_usb = fake_gamepad(), fake_gamepad()
+        second_usb.name = 'Segundo USB'
+        game.gamepad_device, game.second_gamepad_device = first_usb, second_usb
+        game.gamepad_scan_time = 1000
+        game.controller_options(scan=False, team=1)
+        game.begin_gamepad_binding('run')
+        second_usb.buttons[3].pressed = True
+        game.poll_gamepad(0)
+        assert game.second_gamepad_bindings['run'] == 'button:3'
+        assert game.gamepad_bindings['run'] == 'button:2'
+        assert game.storage.read('settings.json')['second_gamepad_bindings'] == game.second_gamepad_bindings
+        second_usb.buttons[3].pressed = False
+        game.new_capture()
+        region = game.cam.node().getDisplayRegion(0)
+        assert region.getBottom() == 0.5 and region.getTop() == 1
+        second_region = game.second_camera.node().getDisplayRegion(0)
+        assert second_region.getBottom() == 0 and second_region.getTop() == 0.5
+        assert game.camLens.getAspectRatio() == pytest.approx(game.getAspectRatio() * 2)
+        for flag in game.capture_flags:
+            lower, upper = flag.getTightBounds()
+            assert upper.z - lower.z == pytest.approx(3.41 / 2)
+        clock = ClockObject.getGlobalClock()
+        clock.setMode(ClockObject.MNonRealTime)
+        clock.setDt(1 / 60)
+        one, two = game.capture_match.players
+        first_position = one.x, one.y
+        second_position = two.x, two.y
+        second_usb.axes[1].value = 1
+        game.taskMgr.step()
+        assert (one.x, one.y) == first_position
+        assert (two.x, two.y) != second_position
+        second_usb.axes[1].value = 0
+        first_usb.axes[1].value = 1
+        second_position = two.x, two.y
+        game.taskMgr.step()
+        assert (one.x, one.y) != first_position
+        assert (two.x, two.y) == second_position
+        first_usb.axes[1].value = 0
+        game.toggle_camera()
+        assert game.local_camera_mode == 'first_person'
+        game.graphicsEngine.renderFrame()
+        second_usb.buttons[7].pressed = True
+        game.taskMgr.step()
+        assert game.mode == 'menu'
+        second_usb.buttons[7].pressed = False
+        game.resume_capture()
+        match = game.capture_match
+        for flag in match.flags:
+            if flag.team != 0:
+                continue
+            one.x, one.y = flag.x, flag.y
+            game.update_capture(0, {}, {})
+            assert flag.captured
+        assert match.winner == 0 and match.scores == [match.flag_count, 0]
+        assert all(node.isHidden() for flag, node in zip(match.flags, game.capture_flags) if flag.team == 0)
+        assert not hasattr(game, 'timer_display')
+        game.new_game()
+        assert game.second_camera is None
+        assert region.getLeft() == 0 and region.getRight() == 1
+        assert game.camLens.getAspectRatio() == pytest.approx(game.getAspectRatio())
+    finally:
+        game.destroy()
+
+
+def test_usb_disconnect_does_not_change_blue_team_device(tmp_path, monkeypatch):
+    from panda3d.core import InputDevice, loadPrcFileData
+    from types import SimpleNamespace
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    import game.app as app
+    game = app.Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        green, blue = fake_gamepad(), fake_gamepad()
+        green.name, blue.name = 'USB Verde', 'USB Azul'
+        green.device_class = blue.device_class = InputDevice.DeviceClass.gamepad
+        available = [green, blue]
+        monkeypatch.setattr(app, 'InputDeviceManager', SimpleNamespace(getGlobalPtr=lambda: SimpleNamespace(getDevices=lambda: available)))
+        game.scan_gamepad()
+        assert game.gamepad_device is green and game.second_gamepad_device is blue
+        green.connected = False
+        available.remove(green)
+        game.scan_gamepad()
+        assert game.gamepad_device is None and game.second_gamepad_device is blue
+        green.connected = True
+        available.append(green)
+        game.scan_gamepad()
+        assert game.gamepad_device is green and game.second_gamepad_device is blue
     finally:
         game.destroy()

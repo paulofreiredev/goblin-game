@@ -159,19 +159,29 @@ A fonte dos textos comuns é DejaVu Sans Mono Bold, incluída em `assets/fonts/m
 
 O botão configurado como **Menu (Start)** pausa a partida e abre o menu. Use o direcional para navegar e **Selecionar (B)** para escolher. A alternância com F tem intervalo mínimo de 0,35 segundo para evitar mudanças repetidas.
 
-## Dois jogadores — capture a bandeira
+## Dois jogadores — busca de bandeiras
 
-No menu principal, escolha **Dois jogadores → Jogar**. As equipes são **Verde** e **Azul**. Pegue a bandeira adversária e volte à sua base com a própria bandeira em casa. Primeiro a **3 capturas** vence. Ataque o adversário de perto e pela frente para devolvê-lo à base; a bandeira carregada cai no chão. Toque na sua bandeira caída para devolvê-la.
+No menu principal, escolha **Dois jogadores**, selecione o **Nível** e clique em **Jogar**. **Verde** coleta apenas bandeiras verdes; **Azul**, apenas azuis. Elas ficam espalhadas em posições aleatórias acessíveis pelo cenário e desaparecem ao serem coletadas. Vence quem encontrar **todas as bandeiras da própria cor primeiro**. Não há cronômetro nem minimapa neste modo.
 
-**Configurar Verde** e **Configurar Azul** permitem substituir as teclas de cada ação. Uma tecla ocupada troca de lugar com a anterior, inclusive entre jogadores. Padrões: Verde usa WASD, espaço, Shift e X; Azul usa setas, Enter, Ctrl e M. O controle USB configurado também controla Verde. A câmera compartilhada acompanha ambos; cada direcional segue a visão da câmera em relação ao respectivo personagem. FPS com F continua disponível na caça de um jogador.
+| Nível | Bandeiras por cor |
+| --- | ---: |
+| Fácil | 3 |
+| Médio | 8 |
+| Difícil | 12 |
 
-**Start** ou **Esc** pausam e abrem o menu. Para continuar a partida local, escolha **Dois jogadores → Retomar partida**. A caça salva permanece preservada. Partidas locais ficam disponíveis durante a sessão do jogo.
+A tela tem **split horizontal**: Verde na metade superior e Azul na inferior, com câmera própria para cada jogador. As bandeiras têm aproximadamente metade da altura do personagem. As direções acompanham a visão de cada jogador. F alterna as duas vistas entre terceira pessoa e FPS, com intervalo mínimo de 0,35 s.
+
+**Configurar Verde** e **Configurar Azul** alteram as teclas de cada ação. Padrões: Verde usa WASD, espaço, Shift e X; Azul usa setas, Enter, Ctrl e M. Uma tecla ocupada troca de lugar com a anterior.
+
+Para usar **dois controles USB**, conecte ambos e abra **USB Verde / Azul**. O botão no topo alterna entre **USB VERDE** e **USB AZUL**; configure as ações de cada um. Cada controle tem seus próprios mapeamentos salvos. Pressionar outra entrada substitui a anterior; entradas ocupadas trocam de lugar. Virar esq./dir. gira a câmera do respectivo jogador.
+
+**Start de qualquer controle** ou **Esc** pausam ambos e abrem o menu. Direcional navega e B confirma. Para continuar, escolha **Dois jogadores → Retomar partida**. A caça salva permanece preservada. Partidas locais ficam disponíveis durante a sessão do jogo.
 
 ![Menu de dois jogadores](docs/images/dois-jogadores-menu.png)
 
-![Dois jogadores capturando bandeiras](docs/images/dois-jogadores.gif)
+![Busca de bandeiras com split horizontal](docs/images/dois-jogadores.gif)
 
-Para regenerar prints e GIF: `.venv/bin/python tools/capture_local_preview.py`. Captura offscreen; interação com dois jogadores e controle real precisa ser conferida no computador do jogador.
+Para regenerar prints e GIF: `.venv/bin/python tools/capture_local_preview.py`. Captura offscreen; uso simultâneo dos dois controles físicos ainda precisa de validação no computador do jogador.
 
 ## Terreno
 
