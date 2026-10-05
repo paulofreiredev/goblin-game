@@ -56,3 +56,18 @@ def third_person_position(foot, desired, obstacles, ground_height):
 def follow_heading(current, target, dt):
     difference = (target - current + 180) % 360 - 180
     return current + difference * (1 - math.exp(-5 * max(0.0, dt)))
+
+
+def relative_movement(right, forward, heading):
+    angle = math.radians(heading)
+    return (right * math.cos(angle) + forward * math.sin(angle),
+            forward * math.cos(angle) - right * math.sin(angle))
+
+
+def view_direction(heading, pitch):
+    yaw, tilt = math.radians(heading), math.radians(pitch)
+    return (math.sin(yaw) * math.cos(tilt), math.cos(yaw) * math.cos(tilt), math.sin(tilt))
+
+
+def facing_direction(heading):
+    return round(2 + heading / 45) % 8

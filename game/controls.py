@@ -8,7 +8,7 @@ MOVEMENT_KEYS = frozenset({"w", "a", "s", "d"})
 
 
 def valid_action_key(key) -> bool:
-    return isinstance(key, str) and key in ACTION_KEYS and key not in MOVEMENT_KEYS
+    return isinstance(key, str) and key in ACTION_KEYS and key not in MOVEMENT_KEYS and key != "f"
 
 
 def load_controls(settings: dict) -> tuple[str, str]:

@@ -41,3 +41,12 @@ def test_follow_heading_wraps_and_is_time_based():
     for _ in range(10):
         split = follow_heading(split, 90, 0.1)
     assert split == pytest.approx(follow_heading(0, 90, 1))
+
+
+def test_fps_relative_movement_and_facing():
+    from game.camera import facing_direction, relative_movement, view_direction
+    assert relative_movement(0, 1, 90) == pytest.approx((1, 0))
+    assert relative_movement(1, 0, 90) == pytest.approx((0, -1))
+    assert facing_direction(0) == 2 and facing_direction(90) == 4
+    assert view_direction(90, 0) == pytest.approx((1, 0, 0))
+    assert view_direction(0, 75)[2] > 0.9

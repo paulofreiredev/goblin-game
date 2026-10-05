@@ -384,3 +384,49 @@ def test_three_phase_campaign_and_saved_difficulty(tmp_path, difficulty, count):
         assert game.player.difficulty == game.difficulty
     finally:
         game.destroy()
+
+
+def test_fps_toggle_movement_attack_jump_and_menu(tmp_path):
+    from panda3d.core import ClockObject, loadPrcFileData
+    from game.world import player_ground_height
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        game.messenger.send('f')
+        assert game.camera_mode == 'third_person'
+        game.new_game()
+        clock = ClockObject.getGlobalClock()
+        clock.setMode(ClockObject.MNonRealTime)
+        clock.setDt(1 / 60)
+        game.messenger.send('f')
+        assert game.camera_mode == 'first_person' and game.sprite.isHidden()
+        assert game.shadow.isHidden() and not game.crosshair.isHidden()
+        assert game.camera.getZ() == pytest.approx(player_ground_height(0, 0) + 2)
+        game.turn_fps_view(600, 0)
+        game.set_key('w', True)
+        game.taskMgr.step()
+        assert game.player.x == pytest.approx(6 / 60)
+        assert game.player.y == pytest.approx(0, abs=1e-6)
+        assert game.player.direction == 4
+        game.keys.clear()
+        enemy = game.encounter.enemies[0]
+        enemy.x, enemy.y = game.player.x + 2, game.player.y
+        game.messenger.send('x')
+        assert enemy.health == 1
+        game.messenger.send('space')
+        game.taskMgr.step()
+        assert game.camera.getZ() == pytest.approx(player_ground_height(game.player.x, game.player.y) + game.player.z + 2)
+        game.turn_fps_view(0, -10000)
+        assert game.fps_pitch == 75
+        game.escape()
+        assert not game.mouse_captured and game.mode == 'menu'
+        game.messenger.send('f')
+        assert game.camera_mode == 'first_person'
+        game.continue_game()
+        game.messenger.send('f')
+        assert game.camera_mode == 'third_person'
+        assert not game.sprite.isHidden() and game.crosshair.isHidden()
+        assert (game.camera.getPos() - game.actor.getPos()).length() > 8
+    finally:
+        game.destroy()

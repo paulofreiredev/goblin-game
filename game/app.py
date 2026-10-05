@@ -11,13 +11,14 @@ from panda3d.core import (
     CardMaker, Filename, Fog, PNMImage, TextNode, Texture,
     TransparencyAttrib, Vec3, StringStream, AmbientLight, DirectionalLight,
     Geom, GeomNode, GeomTriangles, GeomVertexData, GeomVertexFormat, GeomVertexWriter,
-    loadPrcFileData,
+    WindowProperties, loadPrcFileData,
 )
 
 from game.state import DIFFICULTIES, PHASE_COUNT, FIELD_LIMIT, Player, Storage
 from game.models import load_tree, load_enemy
 from game.hud import SevenSegmentDisplay
-from game.camera import follow_heading, segment_box_hit, third_person_position
+from game.camera import (facing_direction, follow_heading, relative_movement,
+                         segment_box_hit, third_person_position, view_direction)
 from game.controls import key_label, load_controls, valid_action_key
 from game.world import (
     Encounter, TREE_CLUSTERS, TREE_SCALE, TREE_OBSTACLES, LOCAL_TREE_OBSTACLES,
@@ -87,6 +88,10 @@ class Game(ShowBase):
         self.keys = {}
         self.camera_heading = 0.0
         self.follow_heading = 0.0
+        self.camera_mode = "third_person"
+        self.fps_heading = 0.0
+        self.fps_pitch = 0.0
+        self.mouse_captured = False
         self.ui = []
         self.save_timer = 0.0
         self.music = None
@@ -113,6 +118,7 @@ class Game(ShowBase):
             self.buttonThrowers[0].node().setButtonDownEvent("control-key")
         self.accept("control-key", self.capture_key)
         self.accept("escape", self.escape)
+        self.accept("f", self.toggle_camera)
         self.accept("window-event", self.window_event)
         self.camera.setPos(0, -20, 7)
         self.camera.lookAt(0, 0, 3)
@@ -166,6 +172,9 @@ class Game(ShowBase):
     def window_event(self, window):
         if window and window.getProperties().hasForeground() and not window.getProperties().getForeground():
             self.keys.clear()
+            self.set_mouse_capture(False)
+        elif self.mode in ("playing", "victory") and self.camera_mode == "first_person":
+            self.set_mouse_capture(True)
 
     def make_world(self):
         self.world = self.render.attachNewNode("field")
@@ -568,6 +577,7 @@ class Game(ShowBase):
                                         self.encounter.clock_snapshot())
 
     def main_menu(self):
+        self.set_mouse_capture(False)
         if self.mode in ("playing", "victory"):
             self.save()
         self.mode = "menu"
@@ -625,6 +635,7 @@ class Game(ShowBase):
         ground = player_ground_height(self.player.x, self.player.y)
         self.sky.setPos(self.player.x, self.player.y, ground)
         self.update_camera(snap=True)
+        self.set_mouse_capture(self.camera_mode == "first_person")
         result = self.encounter.match_result(self.player)
         if result:
             self.finish_match(result)
@@ -646,6 +657,7 @@ class Game(ShowBase):
             self.make_minimap()
             self.label("VITÓRIA! Todos os monstros derrotados!", 0.72, 0.05)
             return
+        self.set_mouse_capture(False)
         self.panel()
         self.label("VITÓRIA!" if result == "victory" else "TEMPO ESGOTADO!", 0.20, 0.065)
         self.label(f"Monstros: {self.encounter.defeated}/{len(self.encounter.enemies)}   Moedas: {self.player.coins}", 0.04, 0.04)
@@ -694,6 +706,8 @@ class Game(ShowBase):
         self.hud_coin_icon = self.gold_coin_icon(panel, (0.70, 0, -0.09), 0.047)
         self.coins_display = SevenSegmentDisplay(panel, (0.77, 0, -0.09))
         self.timer_display = SevenSegmentDisplay(panel, (1.0, 0, -0.09))
+        self.crosshair = self.label("+", 0, 0.035, (1, 1, 1, 1))
+        self.crosshair.hide()
         self.update_hud()
 
     def update_hud(self):
@@ -743,6 +757,7 @@ class Game(ShowBase):
         self.minimap_texture.load(pnm)
 
     def options(self):
+        self.set_mouse_capture(False)
         self.mode = "options"
         self.keys.clear()
         self.panel()
@@ -795,8 +810,66 @@ class Game(ShowBase):
         self.sprite_direction = (self.player.direction - round(math.atan2(*view) / (math.pi / 4))) % 8
         self.sprite.setTexture(self.textures[self.sprite_direction, self.player.frame])
 
+    def set_mouse_capture(self, enabled):
+        self.mouse_captured = False
+        if not self.win or not hasattr(self.win, "requestProperties"):
+            return
+        properties = WindowProperties()
+        properties.setCursorHidden(enabled)
+        properties.setMouseMode(WindowProperties.M_confined if enabled else WindowProperties.M_absolute)
+        self.win.requestProperties(properties)
+        if enabled:
+            self.win.movePointer(0, self.win.getXSize() // 2, self.win.getYSize() // 2)
+        self.mouse_captured = enabled
+
+    def turn_fps_view(self, dx, dy):
+        self.fps_heading = (self.fps_heading + dx * 0.15) % 360
+        self.fps_pitch = max(-75, min(75, self.fps_pitch - dy * 0.15))
+        self.player.direction = facing_direction(self.fps_heading)
+
+    def update_mouse_look(self):
+        if not self.mouse_captured:
+            return
+        pointer = self.win.getPointer(0)
+        if not pointer.getInWindow():
+            return
+        center_x, center_y = self.win.getXSize() // 2, self.win.getYSize() // 2
+        self.turn_fps_view(pointer.getX() - center_x, pointer.getY() - center_y)
+        self.win.movePointer(0, center_x, center_y)
+
+    def toggle_camera(self):
+        if self.mode not in ("playing", "victory"):
+            return
+        if self.camera_mode == "third_person":
+            self.camera_mode = "first_person"
+            self.fps_heading = self.follow_heading
+            self.fps_pitch = 0
+            self.player.direction = facing_direction(self.fps_heading)
+        else:
+            self.camera_mode = "third_person"
+            self.follow_heading = self.fps_heading
+        self.set_mouse_capture(self.camera_mode == "first_person")
+        self.update_camera(snap=True)
+        self.update_character()
+
     def update_camera(self, dt=0.0, *, snap=False):
         foot_height = player_ground_height(self.player.x, self.player.y) + self.player.z
+        if self.camera_mode == "first_person":
+            self.sprite.hide()
+            self.shadow.hide()
+            self.crosshair.show()
+            self.camLens.setFov(75)
+            self.camera.setPos(self.player.x, self.player.y, foot_height + 2)
+            self.camera.lookAt(self.camera.getPos() + Vec3(*view_direction(self.fps_heading, self.fps_pitch)))
+            for node in self.camera_obstacle_nodes:
+                node.clearTransparency()
+                node.clearColorScale()
+                node.setDepthWrite(True)
+            return
+        self.sprite.show()
+        self.shadow.show()
+        self.crosshair.hide()
+        self.camLens.setFov(60)
         self.camera_heading = (self.follow_heading if snap else
                                follow_heading(self.camera_heading, self.follow_heading, dt))
         angle = math.radians(self.camera_heading)
@@ -835,11 +908,16 @@ class Game(ShowBase):
             pressed = lambda *names: any(self.keys.get(name, False) for name in names)
             dx = int(pressed("d", "arrow_right")) - int(pressed("a", "arrow_left"))
             dy = int(pressed("w", "arrow_up")) - int(pressed("s", "arrow_down"))
+            if self.camera_mode == "first_person":
+                self.update_mouse_look()
+                dx, dy = relative_movement(dx, dy, self.fps_heading)
             update_player_actions(self.player, dt)
             old_x, old_y = self.player.x, self.player.y
             self.player.move(dx, dy, pressed("shift"), dt)
+            if self.camera_mode == "first_person":
+                self.player.direction = facing_direction(self.fps_heading)
             move_on_terrain(self.player, old_x, old_y, self.encounter.enemies)
-            if math.hypot(self.player.x - old_x, self.player.y - old_y) > 1e-6:
+            if self.camera_mode == "third_person" and math.hypot(self.player.x - old_x, self.player.y - old_y) > 1e-6:
                 self.follow_heading = math.degrees(math.atan2(self.player.x - old_x, self.player.y - old_y))
             self.encounter.update(self.player, dt)
             if self.encounter.restart_requested:
@@ -865,6 +943,7 @@ class Game(ShowBase):
         return task.cont
 
     def userExit(self):
+        self.set_mouse_capture(False)
         if self.mode in ("playing", "victory"):
             self.save()
         if self.music:

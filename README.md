@@ -23,6 +23,7 @@ Precisa de ambiente gráfico com suporte a OpenGL. A música fornecida em `asset
 - **Shift + movimento:** correr, com velocidade e cadência maiores.
 - **Espaço:** pular; não há salto duplo.
 - **X:** atacar na direção atual; dois golpes derrotam um inimigo.
+- **F:** alternar entre terceira pessoa e FPS. No FPS, mouse controla o olhar e WASD/setas movem em relação a ele. Esc libera o mouse e abre o menu.
 - **Esc:** volta ao menu e salva; nas opções, volta ao menu.
 - **Sair/fechar janela:** encerra e salva quando estiver jogando.
 
@@ -84,7 +85,7 @@ A câmera em terceira pessoa usa distância padrão de 20 unidades, altura relat
 
 Roteiro complementar: tentar subir andando (deve bloquear); pular um degrau, tentar subir outro no mesmo salto (deve bloquear), aterrissar e saltar de novo; sair de uma borda e acompanhar a descida; cair um nível sem dano e dois ou mais com perda de uma vida; testar uma queda fatal; conferir céu, nuvens e visibilidade do chão durante movimento e salto.
 
-Em **Opções**, clique em **Pulo** ou **Ataque** e pressione a nova tecla. Esc cancela a escolha. Teclas de movimento, Shift, Esc, mouse e a tecla já usada pela outra ação não podem ser atribuídas. As escolhas são salvas em `.local/settings.json` junto com o som e podem ser consultadas em Opções. Espaço e X continuam sendo os padrões de saves antigos. Testar também a troca das teclas, o cancelamento e a persistência ao reabrir.
+Em **Opções**, clique em **Pulo** ou **Ataque** e pressione a nova tecla. Esc cancela a escolha. Teclas de movimento, F, Shift, Esc, mouse e a tecla já usada pela outra ação não podem ser atribuídas. As escolhas são salvas em `.local/settings.json` junto com o som e podem ser consultadas em Opções. Espaço e X continuam sendo os padrões de saves antigos. Testar também a troca das teclas, o cancelamento e a persistência ao reabrir.
 
 A colisão do personagem usa uma base circular com raio de 0.6 unidade e considera faces e quinas dos degraus antes que o corpo entre no obstáculo. O salto precisa liberar a altura da superfície; ao cair, o personagem mantém a altura real dos pés. Monstros vivos também bloqueiam o corpo quando as alturas se sobrepõem; um salto que passa acima deles permite a passagem. Testar aproximação frontal e diagonal de paredes, troncos e monstros, além da coleta de moedas entre as árvores.
 
@@ -129,3 +130,13 @@ A quantidade se mantém nas três fases e no reinício por perda de vidas. Tempo
 ![Personagem visível próximo às árvores](docs/images/camera-bosque.png)
 
 A câmera acompanha também o salto e a queda; o HUD permanece em linha e a parte inferior continua sem textos. Captura offscreen: conferir também interativamente a passagem entre árvores, degraus, saltos e quedas.
+
+## Primeira pessoa e terceira pessoa
+
+Pressione **F** durante o jogo para alternar. Em FPS, a câmera fica na altura dos olhos e acompanha salto/queda; o personagem próprio fica oculto, com uma mira discreta no centro. Ataque, corrida e salto continuam funcionando. O modo escolhido se mantém ao pausar/continuar e entre fases durante a sessão.
+
+![Alternância entre terceira pessoa e FPS](docs/images/camera-modos.gif)
+
+![Visão em primeira pessoa](docs/images/camera-fps.png)
+
+Para regenerar essa prévia: `.venv/bin/python tools/capture_camera_preview.py`. Captura offscreen com save temporário. Validar também mouse, foco da janela, F, Esc e retomada interativamente.
