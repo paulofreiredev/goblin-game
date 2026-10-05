@@ -59,3 +59,10 @@ Manter o personagem enquadrado e visível enquanto caminha, salta e cai, inclusi
 ## Encerramento
 
 - Implementação, testes e captura entregues; README atualizado; validação gráfica interativa pendente.
+
+## Ajuste solicitado pelo usuário
+
+- Pedido: “ficou péssimo, não é pra ficar em cima do personagem só mudar a possição da camera pra acompahar”.
+- Refeito o acompanhamento para posição traseira relativa à direção do movimento. Rotação suavizada pelo ângulo, mantendo raio; não interpolar posições em linha reta através do personagem.
+- Removidos fallback sobre o personagem e renderização do sprite por cima de obstáculos. Preferir posições traseiras/laterais livres; obstruções remanescentes das árvores são atenuadas com transparência temporária.
+- Tests reavaliam distância, altura, posição lateral livre, rotação angular e altura na queda.

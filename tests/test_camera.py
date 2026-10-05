@@ -1,5 +1,5 @@
 import pytest
-from game.camera import segment_box_hit, third_person_position
+from game.camera import clear_view, follow_heading, segment_box_hit, third_person_position
 
 
 def flat_ground(x, y):
@@ -14,20 +14,30 @@ def test_segment_box_contact_parallel_miss_and_inside():
 
 
 def test_camera_keeps_normal_distance_in_clear_field():
-    assert third_person_position((0, 0, 0), (0, -20, 7), [], flat_ground) == (0, -20, 7)
+    assert third_person_position((0, 0, 0), (0, -20, 7), [], flat_ground) == pytest.approx((0, -20, 7))
 
 
-def test_camera_shortens_before_tree_and_stays_above_terrain():
+def test_camera_goes_around_tree_without_hovering_over_player():
     box = ((-1, -11, 0), (1, -9, 10))
     position = third_person_position((0, 0, 0), (0, -20, 7), [box], flat_ground)
-    assert -9 < position[1] < -4
-    assert segment_box_hit((0, 0, 1.5), position, box) is None
+    assert clear_view((0, 0, 1.5), position, [box], flat_ground)
+    assert position[2] == 7
+    assert position[0] ** 2 + position[1] ** 2 == pytest.approx(400)
     hill = lambda x, y: 8 if y < -9 else 0
     position = third_person_position((0, 0, 0), (0, -20, 7), [], hill)
-    assert position[1] > -9 and position[2] >= hill(*position[:2]) + 0.5
+    assert clear_view((0, 0, 1.5), position, [], hill)
+    assert position[2] >= hill(*position[:2]) + 0.5
 
 
-def test_close_obstruction_fallback_and_fall_target():
-    box = ((-1, -3, 0), (1, -1, 10))
-    assert third_person_position((0, 0, 0), (0, -20, 7), [box], flat_ground) == (0, -4, 7)
+def test_closed_space_keeps_camera_behind_and_fall_target():
+    box = ((-30, -30, -10), (30, 30, 20))
+    assert third_person_position((0, 0, 0), (0, -20, 7), [box], flat_ground) == pytest.approx((0, -20, 7))
     assert third_person_position((0, 0, 3), (0, -20, 10), [], flat_ground)[2] == 10
+
+
+def test_follow_heading_wraps_and_is_time_based():
+    assert follow_heading(179, -179, 0.1) > 179
+    split = 0
+    for _ in range(10):
+        split = follow_heading(split, 90, 0.1)
+    assert split == pytest.approx(follow_heading(0, 90, 1))

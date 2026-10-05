@@ -21,30 +21,38 @@ def segment_box_hit(start, end, bounds, margin=0.3):
     return first
 
 
-def third_person_position(foot, desired, obstacles, ground_height):
-    """Encurta a linha de visão antes de árvores ou terreno, com margem."""
-    x, y, z = foot
-    target = (x, y, z + 1.5)
-    delta = tuple(desired[axis] - target[axis] for axis in range(3))
-    distance = math.sqrt(sum(value * value for value in delta))
-    fraction = 1.0
+def clear_view(target, position, obstacles, ground_height):
     for bounds in obstacles:
-        hit = segment_box_hit(target, desired, bounds)
-        if hit is not None:
-            fraction = min(fraction, max(0.0, hit - 0.4 / max(distance, 0.001)))
+        if segment_box_hit(target, position, bounds) is not None:
+            return False
+    distance = math.dist(target, position)
     steps = max(1, math.ceil(distance / 0.25))
     for step in range(1, steps + 1):
         t = step / steps
-        if t > fraction:
-            break
-        point = tuple(target[axis] + delta[axis] * t for axis in range(3))
+        point = tuple(target[axis] + (position[axis] - target[axis]) * t for axis in range(3))
         if point[2] < ground_height(point[0], point[1]) + 0.5:
-            fraction = max(0.0, (step - 1) / steps)
-            break
-    if distance * fraction < 4.5:
-        # Espaço curto/volume de copa: manter distância para enquadrar o sprite.
-        position = (x, y - 4, z + 7)
-    else:
-        position = tuple(target[axis] + delta[axis] * fraction for axis in range(3))
-    return (position[0], position[1],
-            max(position[2], ground_height(position[0], position[1]) + 0.5))
+            return False
+    return True
+
+
+def third_person_position(foot, desired, obstacles, ground_height):
+    """Procura visão livre atrás/lateralmente, sem câmera sobre o personagem."""
+    x, y, z = foot
+    target = (x, y, z + 1.5)
+    heading = math.atan2(desired[0] - x, desired[1] - y)
+    # Primeiro preservar distância e altura; contornar por trás e pelos lados.
+    offsets = (0, 15, -15, 30, -30, 45, -45, 60, -60, 90, -90, 120, -120, 150, -150, 180)
+    for distance in (20, 14, 10, 8):
+        for offset in offsets:
+            angle = heading + math.radians(offset)
+            position = (x + distance * math.sin(angle), y + distance * math.cos(angle),
+                        z + 7 * distance / 20)
+            if clear_view(target, position, obstacles, ground_height):
+                return position
+    # Acompanha por trás mesmo em espaço fechado; obstruções visuais são atenuadas.
+    return (desired[0], desired[1], max(desired[2], ground_height(*desired[:2]) + 0.5))
+
+
+def follow_heading(current, target, dt):
+    difference = (target - current + 180) % 360 - 180
+    return current + difference * (1 - math.exp(-5 * max(0.0, dt)))

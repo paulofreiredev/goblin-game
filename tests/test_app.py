@@ -99,7 +99,7 @@ def test_menu_game_options_and_resume(tmp_path):
             game.taskMgr.step()
         assert game.player.y > 0
         assert game.player.animation == 'run'
-        assert game.sprite.getTexture() == game.textures[2, game.player.frame]
+        assert game.sprite.getTexture() == game.textures[game.sprite_direction, game.player.frame]
         y = game.player.y
         game.escape()
         assert game.mode == 'menu'
@@ -143,7 +143,7 @@ def test_menu_game_options_and_resume(tmp_path):
         game.messenger.send('x')
         assert enemy.health == 1  # Cooldown prevents a second immediate hit.
         game.taskMgr.step()
-        assert game.sprite.getTexture() == game.textures[2, game.player.frame]
+        assert game.sprite.getTexture() == game.textures[game.sprite_direction, game.player.frame]
         for _ in range(38):
             game.taskMgr.step()
         game.messenger.send('x')
