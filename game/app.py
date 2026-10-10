@@ -653,7 +653,8 @@ class Game(ShowBase):
                                            frameColor=(0, 0, 0, 0), pos=(0.01, 0, 0.275))
         self.ui.append(self.menu_coins_label)
         self.button("Novo jogo", 0.09, self.new_game)
-        self.button("Continuar", -0.12, self.continue_game, saved_player is not None)
+        self.button("Continuar", -0.12, self.continue_game,
+                    self.capture_match is not None or saved_player is not None)
         self.button("Dois jogadores", -0.33, self.two_player_menu)
         self.button("Opções", -0.54, self.options)
         self.button("Sair", -0.75, self.userExit)
@@ -952,6 +953,9 @@ class Game(ShowBase):
         self.start_game()
 
     def continue_game(self):
+        if self.capture_match is not None:
+            self.resume_capture()
+            return
         self.close_capture()
         player = self.storage.load_player()
         if player is not None:

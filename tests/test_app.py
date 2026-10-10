@@ -651,8 +651,9 @@ def test_two_players_controls_pause_resume_and_solo_save(tmp_path):
         game.main_menu()
         assert game.storage.read('save.json') == saved
         game.continue_game()
-        assert game.mode == 'playing' and game.player.coins == 9
-        assert game.capture_match is None
+        assert game.mode == 'capture' and game.capture_match is session
+        assert positions == [(p.x, p.y) for p in session.players]
+        assert game.storage.read('save.json') == saved
         game.graphicsEngine.renderFrame()
     finally:
         game.destroy()
@@ -1001,5 +1002,55 @@ def test_capture_minimaps_positions_and_lifecycle(tmp_path):
         game.new_game()
         assert all(panel.isEmpty() for panel in old_maps)
         assert not game.minimap.isEmpty()
+    finally:
+        game.destroy()
+
+
+def test_continue_resumes_capture_without_solo_save_and_preserves_victory(tmp_path):
+    from direct.gui.DirectGui import DirectButton
+    from panda3d.core import loadPrcFileData
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        assert game.storage.load_player() is None
+        game.new_capture()
+        match = game.capture_match
+        camera = game.second_camera
+        first_flag = next(flag for flag in match.flags if flag.team == 0)
+        match.players[0].x, match.players[0].y = first_flag.x, first_flag.y
+        game.update_capture(0, {})
+        assert first_flag.captured and match.scores[0] == 1
+        positions = [(player.x, player.y) for player in match.players]
+        game.escape()
+        button = next(widget for widget in game.ui
+                      if isinstance(widget, DirectButton) and widget['text'] == 'Continuar')
+        assert button['state'] != 'disabled'
+        button['command']()
+        assert game.mode == 'capture' and game.capture_match is match
+        assert game.second_camera is camera
+        assert first_flag.captured and match.scores[0] == 1
+        assert [(player.x, player.y) for player in match.players] == positions
+        game.main_menu()
+        game.options()
+        game.main_menu()
+        game.escape()
+        assert game.mode == 'capture' and game.capture_match is match
+        for flag in match.flags:
+            if flag.team == 0 and not flag.captured:
+                match.players[0].x, match.players[0].y = flag.x, flag.y
+                game.update_capture(0, {})
+        game.update_capture(0.75, {})
+        game.main_menu()
+        game.continue_game()
+        assert game.capture_match is match and game.capture_victory_elapsed == 0.75
+        assert not game.capture_winner_label.isHidden()
+        assert game.storage.load_player() is None
+        game.new_game()
+        assert game.capture_match is None and game.mode == 'playing'
+        game.player.coins = 7
+        game.main_menu()
+        game.continue_game()
+        assert game.mode == 'playing' and game.player.coins == 7
     finally:
         game.destroy()
