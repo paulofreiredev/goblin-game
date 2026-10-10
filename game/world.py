@@ -93,6 +93,10 @@ def jump_player(player: Player) -> bool:
     if not player.jump():
         return False
     player.fall_start_height = player_ground_height(player.x, player.y)
+    if player.fall_start_height < 0:
+        # Altura suficiente para alcançar a borda, com margem para avançar.
+        player.vertical_speed = max(player.vertical_speed,
+                                    math.sqrt(40 * (-player.fall_start_height + 0.6)))
     return True
 
 
@@ -125,8 +129,10 @@ def move_on_terrain(player: Player, old_x: float, old_y: float, enemies=()) -> N
             continue
         rise = new_ground - old_ground
         if rise > 1e-6:
-            if (not player.jump_active or player.climbed_this_jump
-                    or rise > LEVEL_HEIGHT + 1e-6 or player.z + 1e-6 < rise):
+            escaping_pit = old_ground < 0 and new_ground <= 1e-6
+            if (not player.jump_active or player.z + 1e-6 < rise
+                    or (not escaping_pit and (player.climbed_this_jump
+                                             or rise > LEVEL_HEIGHT + 1e-6))):
                 continue
             player.climbed_this_jump = True
         if rise < -1e-6 and player.fall_start_height is None:

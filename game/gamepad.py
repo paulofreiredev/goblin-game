@@ -1,6 +1,17 @@
 """Mapeamento de controles USB, independente da interface gráfica."""
 import re
 
+
+def same_device(first, second):
+    """Compara o dispositivo físico, sem confundir controles do mesmo modelo."""
+    if first is None or second is None:
+        return first is second
+    first_pointer = getattr(first, 'this', None)
+    second_pointer = getattr(second, 'this', None)
+    if first_pointer is not None and second_pointer is not None:
+        return int(first_pointer) == int(second_pointer)
+    return first is second
+
 GAMEPAD_ACTIONS = {
     'up': 'Frente', 'down': 'Trás', 'left': 'Esquerda', 'right': 'Direita',
     'jump': 'Salto', 'run': 'Corrida', 'attack': 'Ataque',

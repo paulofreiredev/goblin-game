@@ -18,7 +18,7 @@ from game.capture import CaptureMatch, LOCAL_ACTIONS, load_local_controls, repla
 from game.state import DIFFICULTIES, PHASE_COUNT, FIELD_LIMIT, Player, Storage
 from game.models import load_tree, load_enemy
 from game.hud import SevenSegmentDisplay
-from game.gamepad import GAMEPAD_ACTIONS, binding_label, load_bindings, mapped_actions, read_device, replace_binding
+from game.gamepad import GAMEPAD_ACTIONS, binding_label, load_bindings, mapped_actions, read_device, replace_binding, same_device
 from game.camera import (facing_direction, follow_heading, relative_movement,
                          segment_box_hit, third_person_position, view_direction)
 from game.controls import key_label, load_controls, valid_action_key
@@ -97,6 +97,8 @@ class Game(ShowBase):
         self.gamepad_previous = {}
         self.gamepad_scan_time = 0.0
         self.pending_gamepad_action = None
+        self.pending_gamepad_device = False
+        self.device_selection_previous = []
         self.gamepad_baseline = set()
         self.menu_previous_actions = {}
         self.menu_repeat_time = 0.0
@@ -632,6 +634,7 @@ class Game(ShowBase):
 
     def main_menu(self):
         self.pending_gamepad_action = None
+        self.pending_gamepad_device = False
         self.local_binding = None
         self.set_mouse_capture(False)
         if self.mode in ("playing", "victory"):
@@ -668,9 +671,10 @@ class Game(ShowBase):
         self.button("Retomar partida", -0.10, self.resume_capture, self.capture_match is not None)
         self.button("Configurar Verde", -0.32, lambda: self.local_controls_menu(0), x=-0.76)
         self.button("Configurar Azul", -0.32, lambda: self.local_controls_menu(1), x=0.76)
-        self.button("USB Verde / Azul", -0.55, lambda: self.controller_options(team=0), x=-0.76)
-        self.button("Voltar", -0.55, self.main_menu, x=0.76)
-        self.label("Dois controles USB ou teclados — sem limite de tempo", -0.82, 0.041)
+        self.button("USB Verde", -0.55, lambda: self.controller_options(team=0), x=-0.76)
+        self.button("USB Azul", -0.55, lambda: self.controller_options(team=1), x=0.76)
+        self.button("Voltar", -0.76, self.main_menu)
+        self.label("Dois controles USB ou teclados — sem limite de tempo", -0.96, 0.041)
 
     def cycle_local_difficulty(self):
         modes = list(DIFFICULTIES)
@@ -714,14 +718,18 @@ class Game(ShowBase):
             node.removeNode()
         self.capture_nodes = []
         self.capture_match = None
+        self.capture_sprites = []
         self.actor.clearColorScale()
         self.actor.show()
+        self.actor.show(BitMask32.allOn())
         self.sprite.show()
+        self.sprite.show(BitMask32.allOn())
         self.shadow.show()
 
     def new_capture(self):
         self.close_capture()
         self.capture_match = CaptureMatch(difficulty=self.difficulty)
+        self.capture_victory_elapsed = None
         self.player = self.capture_match.players[0]
         self.player.phase = 0
         self.apply_phase()
@@ -729,6 +737,15 @@ class Game(ShowBase):
         self.second_sprite = self.second_actor.find("**/rider-sprite")
         self.second_actor.setColorScale(0.55, 0.75, 1, 1)
         self.capture_nodes.append(self.second_actor)
+        self.capture_sprites = []
+        for actor, sprite in ((self.actor, self.sprite), (self.second_actor, self.second_sprite)):
+            other_view = sprite.copyTo(actor)
+            self.capture_nodes.append(other_view)
+            views = [sprite, other_view]
+            for observer, view in enumerate(views):
+                view.hide(BitMask32.allOn())
+                view.show(BitMask32.bit(observer))
+            self.capture_sprites.append(views)
         self.capture_flags = []
         for index, flag in enumerate(self.capture_match.flags):
             team = flag.team
@@ -780,17 +797,30 @@ class Game(ShowBase):
             self.capture_scores.append(label)
             self.ui.append(label)
         self.capture_score = self.capture_scores[0]
+        self.make_capture_minimaps()
         self.ui.append(DirectFrame(parent=self.render2d, frameColor=(0.01, 0.02, 0.03, 1),
                                    frameSize=(-1, 1, -0.005, 0.005)))
+        self.capture_winner_label = DirectLabel(
+            parent=self.aspect2d, text_font=self.body_font, text="",
+            text_scale=0.15, text_fg=(1, 1, 1, 1),
+            text_shadow=(0, 0, 0, 1), frameColor=(0.01, 0.02, 0.03, 0.92),
+            frameSize=(-1.25, 1.25, -0.18, 0.22), pos=(0, 0, 0))
+        self.capture_winner_label.hide()
+        self.ui.append(self.capture_winner_label)
         for node in self.enemy_nodes + self.enemy_bars + self.coin_nodes + self.heart_nodes + self.clock_nodes:
             node.hide()
         self.sprite.show()
         self.shadow.show()
         self.update_capture(0, {})
 
-    def update_capture(self, dt, pad, second_pad=None):
+    def update_capture(self, dt, pad, second_pad=None, *, elapsed=None):
         pads = [pad, second_pad or {}]
         match = self.capture_match
+        if match.winner is not None and self.capture_victory_elapsed is not None:
+            self.capture_victory_elapsed += max(0.0, dt if elapsed is None else elapsed)
+            if self.capture_victory_elapsed >= 2.0:
+                self.new_capture()
+                return
         for team, player in enumerate(match.players):
             actions = {action: bool(self.keys.get(key, False) or pads[team].get(action, False))
                        for action, key in self.local_controls[team].items()}
@@ -816,14 +846,17 @@ class Game(ShowBase):
                     player.health = 5
                     player.z = player.vertical_speed = 0
             actor = self.actor if team == 0 else self.second_actor
-            sprite = self.sprite if team == 0 else self.second_sprite
             ground = player_ground_height(player.x, player.y)
             actor.setPos(player.x, player.y, ground)
-            sprite.setZ(player.z)
-            row = (player.direction - round(self.local_headings[team] / 45)) % 8
-            sprite.setTexture(self.textures[row, player.frame])
         self.actor.setColorScale(0.65, 1, 0.65, 1)
         match.update()
+        if match.winner is not None:
+            if self.capture_victory_elapsed is None:
+                self.capture_victory_elapsed = 0.0
+            self.capture_winner_label['text'] = ("VERDE" if match.winner == 0 else "AZUL") + " VENCEU!"
+            self.capture_winner_label['text_fg'] = ((0.3, 1, 0.4, 1) if match.winner == 0
+                                                     else (0.4, 0.7, 1, 1))
+            self.capture_winner_label.show()
         for flag, node in zip(match.flags, self.capture_flags):
             if flag.captured:
                 node.hide()
@@ -847,6 +880,12 @@ class Game(ShowBase):
                 camera.lookAt(player.x, player.y, foot + 1.8)
             if self.local_camera_mode == "third_person":
                 self.local_headings[team] = math.degrees(math.atan2(player.x - camera.getX(), player.y - camera.getY())) % 360
+        for player, views in zip(match.players, self.capture_sprites):
+            for camera, sprite in zip((self.camera, self.second_camera), views):
+                heading = math.degrees(math.atan2(player.x - camera.getX(), player.y - camera.getY()))
+                row = (player.direction - round(heading / 45)) % 8
+                sprite.setZ(player.z)
+                sprite.setTexture(self.textures[row, player.frame])
         self.sky.setPos(match.players[0].x, match.players[0].y, 0)
         for obstacle, node in zip(self.camera_obstacles, self.camera_obstacle_nodes):
             obscures = any(segment_box_hit(tuple(self.camera.getPos()),
@@ -864,8 +903,46 @@ class Game(ShowBase):
                 node.clearDepthWrite()
         for team, label in enumerate(self.capture_scores):
             label['text'] = ("VERDE" if team == 0 else "AZUL") + f" {match.scores[team]}/{match.flag_count}"
-            if match.winner is not None:
-                label['text'] += " — " + ("VERDE" if match.winner == 0 else "AZUL") + " VENCEU"
+        self.update_capture_minimaps()
+
+    def make_capture_minimaps(self):
+        image = Image.new("RGBA", (192, 192), (18, 40, 27, 240))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((12, 12, 180, 180), fill=(45, 83, 43, 255),
+                       outline=(210, 206, 162, 255), width=2)
+        scale = 84 / FIELD_LIMIT
+        for x0, x1, y0, y1, height in terrain_surfaces():
+            draw.rectangle((96 + x0 * scale, 96 - y1 * scale,
+                            96 + x1 * scale, 96 - y0 * scale),
+                           fill=(88, 115, 61, 255) if height > 0 else (26, 51, 33, 255))
+        draw.text((93, 0), "N", fill=(255, 255, 255, 255))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        pnm = PNMImage()
+        pnm.read(StringStream(buffer.getvalue()))
+        texture = Texture("capture-minimap")
+        texture.load(pnm)
+        self.capture_minimaps = []
+        self.capture_map_markers = []
+        for observer in range(2):
+            panel = DirectFrame(parent=self.a2dTopRight, pos=(-0.21, 0, -0.22 - observer),
+                                image=texture, image_scale=0.16, frameColor=(0, 0, 0, 0))
+            panel.setTransparency(TransparencyAttrib.MAlpha)
+            self.ui.append(panel)
+            self.capture_minimaps.append(panel)
+            markers = []
+            for team, color in enumerate(((0.15, 1, 0.3, 1), (0.2, 0.55, 1, 1))):
+                radius = 0.014 if team == 0 else 0.009
+                marker = DirectFrame(parent=panel, frameColor=color,
+                                     frameSize=(-radius, radius, -radius, radius))
+                markers.append(marker)
+            self.capture_map_markers.append(markers)
+
+    def update_capture_minimaps(self):
+        scale = 0.14 / FIELD_LIMIT
+        for markers in self.capture_map_markers:
+            for player, marker in zip(self.capture_match.players, markers):
+                marker.setPos(player.x * scale, 0, player.y * scale)
 
     def new_game(self, difficulty=None):
         self.close_capture()
@@ -1042,17 +1119,14 @@ class Game(ShowBase):
                    or "Dificuldade aplicada ao novo jogo", -0.82, 0.042)
 
     def scan_gamepad(self):
-        devices = InputDeviceManager.getGlobalPtr().getDevices()
-        candidates = [device for device in devices if device.connected and device.device_class in
-                      (InputDevice.DeviceClass.gamepad, InputDevice.DeviceClass.unknown)]
-        available = candidates.copy()
-        device = next((item for item in available if item == self.gamepad_device), None)
-        fallback = [item for item in available if item != self.second_gamepad_device]
+        available = self.available_gamepads()
+        device = next((item for item in available if same_device(item, self.gamepad_device)), None)
+        fallback = [item for item in available if not same_device(item, self.second_gamepad_device)]
         device = device or (fallback[0] if fallback else None)
-        available = [item for item in available if item != device]
-        second = next((item for item in available if item == self.second_gamepad_device), None)
+        available = [item for item in available if not same_device(item, device)]
+        second = next((item for item in available if same_device(item, self.second_gamepad_device)), None)
         second = second or (available[0] if available else None)
-        changed = device != self.gamepad_device or second != self.second_gamepad_device
+        changed = not same_device(device, self.gamepad_device) or not same_device(second, self.second_gamepad_device)
         if changed:
             self.gamepad_device, self.second_gamepad_device = device, second
             self.gamepad_previous = {}
@@ -1070,6 +1144,7 @@ class Game(ShowBase):
 
     def switch_controller_team(self):
         self.pending_gamepad_action = None
+        self.pending_gamepad_device = False
         self.gamepad_message = ""
         self.controller_options(scan=False, team=1 - self.controller_team)
 
@@ -1087,7 +1162,8 @@ class Game(ShowBase):
         device = self.configured_device()
         connected = device is not None and device.connected
         name = device.name if connected else "Nenhum controle USB detectado"
-        self.label(name[:60], 0.35, 0.042)
+        self.button("Escolher joystick: " + name[:40], 0.35, self.begin_device_selection,
+                    width=1.4, scale=0.035, compact=True)
         for index, (action, title) in enumerate(GAMEPAD_ACTIONS.items()):
             column, row = ((0, index) if index < 4 else
                            (0, index - 5) if index >= 9 else (1, index - 4))
@@ -1096,7 +1172,9 @@ class Game(ShowBase):
                         lambda action=action: self.begin_gamepad_binding(action), connected,
                         x=-0.78 if column == 0 else 0.78, width=0.70, scale=0.053, compact=True)
         self.button("Voltar", -0.83, self.leave_controller_options)
-        if self.pending_gamepad_action:
+        if self.pending_gamepad_device:
+            message = "Pressione um botão no joystick desta cor. Esc cancela."
+        elif self.pending_gamepad_action:
             message = self.gamepad_message or "Mova/pressione o controle. Esc cancela."
         else:
             message = self.gamepad_message or "Escolha uma ação para configurar"
@@ -1104,6 +1182,7 @@ class Game(ShowBase):
 
     def leave_controller_options(self):
         self.pending_gamepad_action = None
+        self.pending_gamepad_device = False
         self.gamepad_message = ""
         self.options()
 
@@ -1112,10 +1191,49 @@ class Game(ShowBase):
         if device is None or not device.connected:
             return
         self.pending_gamepad_action = action
+        self.pending_gamepad_device = False
         self.menu_input_block = 0.25
         self.gamepad_message = ""
         self.gamepad_baseline = read_device(device)
         self.controller_options(scan=False)
+
+    def available_gamepads(self):
+        return [device for device in InputDeviceManager.getGlobalPtr().getDevices()
+                if device.connected and device.device_class in
+                (InputDevice.DeviceClass.gamepad, InputDevice.DeviceClass.unknown)]
+
+    def begin_device_selection(self):
+        self.pending_gamepad_action = None
+        self.pending_gamepad_device = True
+        self.device_selection_previous = [(device, read_device(device))
+                                          for device in self.available_gamepads()]
+        self.controller_options(scan=False)
+
+    def poll_device_selection(self):
+        previous = self.device_selection_previous
+        self.device_selection_previous = []
+        for device in self.available_gamepads():
+            active = read_device(device)
+            baseline = next((inputs for item, inputs in previous if same_device(item, device)), active)
+            self.device_selection_previous.append((device, active))
+            if not any(value.startswith("button:") for value in active - baseline):
+                continue
+            current = self.configured_device()
+            if self.controller_team == 0:
+                if same_device(device, self.second_gamepad_device):
+                    self.second_gamepad_device = current
+                self.gamepad_device = device
+            else:
+                if same_device(device, self.gamepad_device):
+                    self.gamepad_device = current
+                self.second_gamepad_device = device
+            self.pending_gamepad_device = False
+            self.gamepad_previous = mapped_actions(read_device(self.gamepad_device), self.gamepad_bindings)
+            self.second_gamepad_previous = mapped_actions(read_device(self.second_gamepad_device), self.second_gamepad_bindings)
+            self.menu_input_block = 0.25
+            self.gamepad_message = "Joystick atribuído a " + ("VERDE" if self.controller_team == 0 else "AZUL")
+            self.controller_options(scan=False)
+            return
 
     def poll_gamepad(self, elapsed):
         self.gamepad_scan_time -= elapsed
@@ -1123,6 +1241,9 @@ class Game(ShowBase):
             self.gamepad_scan_time = 0.5
             self.scan_gamepad()
         active = read_device(self.gamepad_device)
+        if self.mode == "controller_options" and self.pending_gamepad_device:
+            self.poll_device_selection()
+            active = read_device(self.gamepad_device)
         if self.mode == "controller_options" and self.pending_gamepad_action:
             capture_active = read_device(self.configured_device())
             fresh = capture_active - self.gamepad_baseline
@@ -1178,8 +1299,9 @@ class Game(ShowBase):
                 self.two_player_menu()
             return
         if self.mode == "controller_options":
-            if self.pending_gamepad_action:
+            if self.pending_gamepad_action or self.pending_gamepad_device:
                 self.pending_gamepad_action = None
+                self.pending_gamepad_device = False
                 self.gamepad_message = "Escolha cancelada"
                 self.controller_options(scan=False)
             else:
@@ -1321,7 +1443,7 @@ class Game(ShowBase):
         fresh = {action for action, pressed in actions.items()
                  if pressed and not self.menu_previous_actions.get(action)}
         self.menu_previous_actions = actions
-        if self.mode in ("playing", "capture", "victory") or self.pending_gamepad_action or self.local_binding or self.menu_input_block > 0:
+        if self.mode in ("playing", "capture", "victory") or self.pending_gamepad_action or self.pending_gamepad_device or self.local_binding or self.menu_input_block > 0:
             return
         buttons = [item for item in self.ui if isinstance(item, DirectButton) and item['state'] != 'disabled']
         if not buttons:
@@ -1361,9 +1483,11 @@ class Game(ShowBase):
         if "menu" in (pad_edges | self.second_gamepad_edges) and self.mode in ("playing", "capture", "victory"):
             self.main_menu()
         menu_pad = {action: pad.get(action, False) or self.second_gamepad_previous.get(action, False) for action in GAMEPAD_ACTIONS}
+        if self.mode == "controller_options":
+            menu_pad = pad if self.controller_team == 0 else self.second_gamepad_previous
         self.navigate_menu(menu_pad, elapsed)
         if self.mode == "capture":
-            self.update_capture(dt, pad, self.second_gamepad_previous)
+            self.update_capture(dt, pad, self.second_gamepad_previous, elapsed=elapsed)
             return task.cont
         if self.mode in ("playing", "victory"):
             if self.mode == "playing":

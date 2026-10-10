@@ -161,7 +161,7 @@ O botão configurado como **Menu (Start)** pausa a partida e abre o menu. Use o 
 
 ## Dois jogadores — busca de bandeiras
 
-No menu principal, escolha **Dois jogadores**, selecione o **Nível** e clique em **Jogar**. **Verde** coleta apenas bandeiras verdes; **Azul**, apenas azuis. Elas ficam espalhadas em posições aleatórias acessíveis pelo cenário e desaparecem ao serem coletadas. Vence quem encontrar **todas as bandeiras da própria cor primeiro**. Não há cronômetro nem minimapa neste modo.
+No menu principal, escolha **Dois jogadores**, selecione o **Nível** e clique em **Jogar**. **Verde** coleta apenas bandeiras verdes; **Azul**, apenas azuis. Elas ficam espalhadas em posições aleatórias acessíveis pelo cenário e desaparecem ao serem coletadas. Vence quem encontrar **todas as bandeiras da própria cor primeiro**. O vencedor aparece em destaque no centro da tela por **2 segundos**; depois uma nova rodada começa automaticamente no mesmo nível, com placares zerados e novas bandeiras. Abrir o menu pausa essa espera. Não há cronômetro neste modo. Cada metade da tela tem um minimapa no canto superior direito, com os jogadores marcados em verde e azul. O norte fica para cima; áreas claras indicam elevações e áreas escuras indicam buracos.
 
 | Nível | Bandeiras por cor |
 | --- | ---: |
@@ -169,11 +169,11 @@ No menu principal, escolha **Dois jogadores**, selecione o **Nível** e clique e
 | Médio | 8 |
 | Difícil | 12 |
 
-A tela tem **split horizontal**: Verde na metade superior e Azul na inferior, com câmera própria para cada jogador. As bandeiras têm aproximadamente metade da altura do personagem. As direções acompanham a visão de cada jogador. F alterna as duas vistas entre terceira pessoa e FPS, com intervalo mínimo de 0,35 s.
+A tela tem **split horizontal**: Verde na metade superior e Azul na inferior, com câmera própria para cada jogador. As bandeiras têm aproximadamente metade da altura do personagem. As direções acompanham a visão de cada jogador. Cada tela mostra o ângulo do personagem e do oponente conforme a posição da própria câmera. F alterna as duas vistas entre terceira pessoa e FPS, com intervalo mínimo de 0,35 s.
 
 **Configurar Verde** e **Configurar Azul** alteram as teclas de cada ação. Padrões: Verde usa WASD, espaço, Shift e X; Azul usa setas, Enter, Ctrl e M. Uma tecla ocupada troca de lugar com a anterior.
 
-Para usar **dois controles USB**, conecte ambos e abra **USB Verde / Azul**. O botão no topo alterna entre **USB VERDE** e **USB AZUL**; configure as ações de cada um. Cada controle tem seus próprios mapeamentos salvos. Pressionar outra entrada substitui a anterior; entradas ocupadas trocam de lugar. Virar esq./dir. gira a câmera do respectivo jogador.
+Para usar **dois controles USB**, conecte ambos e abra **USB Verde** ou **USB Azul** no menu de dois jogadores. Clique em **Escolher joystick** e pressione um botão no controle que deve jogar com essa cor. Se ele estiver atribuído à outra cor, os dois dispositivos trocam de equipe. A escolha do dispositivo vale para a sessão atual; ao reabrir o jogo, identifique novamente se necessário. O botão no topo alterna entre **USB VERDE** e **USB AZUL**; configure as ações de cada um. Cada controle tem seus próprios mapeamentos salvos. Dois joysticks do mesmo modelo e nome são tratados como dispositivos separados; na configuração de uma cor, apenas o joystick daquela cor navega e fornece as entradas do mapeamento. Pressionar outra entrada substitui a anterior; entradas ocupadas trocam de lugar. Virar esq./dir. gira a câmera do respectivo jogador.
 
 **Start de qualquer controle** ou **Esc** pausam ambos e abrem o menu. Direcional navega e B confirma. Para continuar, escolha **Dois jogadores → Retomar partida**. A caça salva permanece preservada. Partidas locais ficam disponíveis durante a sessão do jogo.
 
@@ -186,3 +186,5 @@ Para regenerar prints e GIF: `.venv/bin/python tools/capture_local_preview.py`. 
 ## Terreno
 
 O campo tem duas elevações e duas depressões grandes. Há escadas em apenas dois acessos, com degraus de 4 unidades de profundidade e largura de 26 ou 30 unidades. Os demais lados têm faces diretas e os interiores são planos.
+
+Dentro dos buracos, o salto ganha altura suficiente para alcançar a borda: pule e avance para sair por qualquer lado, inclusive onde não há escadas. A subida das elevações continua seguindo um degrau por salto.

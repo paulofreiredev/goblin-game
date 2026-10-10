@@ -53,3 +53,16 @@ def test_every_occupied_mapping_can_be_replaced_including_start_and_b():
             assert updated[action] == binding
             assert load_bindings({'gamepad_bindings': updated}) == updated
     assert DEFAULT_BINDINGS['attack'] == 'button:1'
+
+
+def test_device_identity_distinguishes_equal_models_and_native_wrappers():
+    from game.gamepad import same_device
+    first, second = fake_gamepad(), fake_gamepad()
+    second.poll = first.poll
+    assert first == second
+    assert not same_device(first, second)
+    assert same_device(first, first)
+    assert not same_device(first, None)
+    assert same_device(None, None)
+    assert same_device(SimpleNamespace(this=123), SimpleNamespace(this=123))
+    assert not same_device(SimpleNamespace(this=123), SimpleNamespace(this=456))

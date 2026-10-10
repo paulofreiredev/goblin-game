@@ -450,7 +450,7 @@ def test_controller_options_mapping_gameplay_and_disconnect(tmp_path):
         assert any(isinstance(item, DirectButton) and item['text'] == 'Controle USB' for item in game.ui)
         game.controller_options()
         assert game.mode == 'controller_options'
-        assert any('Nenhum controle' in item['text'] for item in game.ui if isinstance(item, DirectLabel))
+        assert any('Nenhum controle' in item['text'] for item in game.ui if isinstance(item, DirectButton))
         device = fake_gamepad()
         game.gamepad_device = device
         game.gamepad_scan_time = 1000
@@ -752,5 +752,254 @@ def test_usb_disconnect_does_not_change_blue_team_device(tmp_path, monkeypatch):
         available.append(green)
         game.scan_gamepad()
         assert game.gamepad_device is green and game.second_gamepad_device is blue
+    finally:
+        game.destroy()
+
+
+@pytest.mark.parametrize('team', [0, 1])
+def test_capture_winner_display_and_two_second_restart(tmp_path, team):
+    from panda3d.core import loadPrcFileData
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        game.difficulty = 'easy'
+        game.new_capture()
+        match = game.capture_match
+        camera_count = len(game.camList)
+        for flag in match.flags:
+            if flag.team == team:
+                match.players[team].x, match.players[team].y = flag.x, flag.y
+                game.update_capture(0.1, {}, {}, elapsed=0.5)
+        assert match.winner == team
+        assert game.capture_victory_elapsed == 0
+        assert game.capture_winner_label['text'] == ('VERDE' if team == 0 else 'AZUL') + ' VENCEU!'
+        assert not game.capture_winner_label.isHidden()
+        assert game.capture_winner_label['text_scale'] > game.capture_score['text_scale']
+        game.update_capture(0.1, {}, {}, elapsed=1.99)
+        assert game.capture_match is match
+        game.main_menu()
+        game.resume_capture()
+        assert not game.capture_winner_label.isHidden()
+        assert game.capture_victory_elapsed == 1.99
+        game.update_capture(0.01, {}, {})
+        assert game.capture_match is not match
+        assert game.capture_match.winner is None
+        assert game.capture_match.scores == [0, 0]
+        assert game.capture_match.difficulty == 'easy'
+        assert all(not flag.captured for flag in game.capture_match.flags)
+        assert [(p.x, p.y) for p in game.capture_match.players] == game.capture_match.bases
+        assert game.capture_winner_label.isHidden()
+        assert len(game.camList) == camera_count
+        label = game.capture_winner_label
+        game.new_game()
+        assert label.isEmpty()
+        assert game.second_camera is None
+    finally:
+        game.destroy()
+
+
+def test_capture_sprites_follow_each_observer_and_restore_solo(tmp_path):
+    import math
+    from panda3d.core import BitMask32, loadPrcFileData
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        game.new_capture()
+        for player, position in zip(game.capture_match.players, [(0, -25), (10, -25)]):
+            player.x, player.y = position
+            player.direction = 2
+            player.z = 0.5
+        for heading in range(0, 360, 45):
+            game.local_headings = [heading, (heading + 180) % 360]
+            game.update_capture(0, {})
+            for player, views in zip(game.capture_match.players, game.capture_sprites):
+                rows = []
+                for observer, (camera, sprite) in enumerate(zip((game.camera, game.second_camera), views)):
+                    angle = math.degrees(math.atan2(player.x - camera.getX(), player.y - camera.getY()))
+                    row = (player.direction - round(angle / 45)) % 8
+                    rows.append(row)
+                    assert sprite.getTexture() == game.textures[row, player.frame]
+                    assert sprite.getZ() == player.z
+                    assert not sprite.isHidden(BitMask32.bit(observer))
+                    assert sprite.isHidden(BitMask32.bit(1 - observer))
+                if heading == 90:
+                    assert rows[0] != rows[1]
+        game.toggle_camera()
+        assert game.local_camera_mode == 'first_person'
+        for team, views in enumerate(game.capture_sprites):
+            assert views[team].isHidden(BitMask32.bit(team))
+            assert not views[1 - team].isHidden(BitMask32.bit(1 - team))
+        old_views = [views[1] for views in game.capture_sprites]
+        game.new_capture()
+        assert all(view.isEmpty() for view in old_views)
+        assert all(not view.isHidden(BitMask32.bit(observer))
+                   for views in game.capture_sprites for observer, view in enumerate(views))
+        old_views = [views[1] for views in game.capture_sprites]
+        game.new_game()
+        assert all(view.isEmpty() for view in old_views)
+        assert not game.sprite.isHidden(BitMask32.bit(0))
+        assert not game.sprite.isHidden(BitMask32.bit(1))
+    finally:
+        game.destroy()
+
+
+def test_choose_usb_for_each_team_without_changing_bindings(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from panda3d.core import InputDevice, loadPrcFileData
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    import game.app as app
+    game = app.Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        first, second = fake_gamepad(), fake_gamepad()
+        first.name, second.name = 'Joystick 1', 'Joystick 2'
+        for device in (first, second):
+            device.device_class = InputDevice.DeviceClass.gamepad
+        monkeypatch.setattr(app, 'InputDeviceManager', SimpleNamespace(getGlobalPtr=lambda: SimpleNamespace(getDevices=lambda: [first, second])))
+        game.scan_gamepad()
+        green_bindings = game.gamepad_bindings.copy()
+        game.controller_options(team=1)
+        first.buttons[0].pressed = True
+        game.begin_device_selection()
+        game.poll_gamepad(0)
+        assert game.pending_gamepad_device
+        assert game.second_gamepad_device is second
+        first.buttons[0].pressed = False
+        game.poll_gamepad(0)
+        first.buttons[0].pressed = True
+        game.poll_gamepad(0)
+        assert not game.pending_gamepad_device
+        assert game.second_gamepad_device is first
+        assert game.gamepad_device is second
+        first.buttons[0].pressed = False
+        game.begin_gamepad_binding('run')
+        second.buttons[3].pressed = True
+        game.poll_gamepad(0)
+        assert game.pending_gamepad_action == 'run'
+        first.buttons[3].pressed = True
+        game.poll_gamepad(0)
+        assert game.second_gamepad_bindings['run'] == 'button:3'
+        assert game.gamepad_bindings == green_bindings
+        assert game.storage.read('settings.json')['second_gamepad_bindings']['run'] == 'button:3'
+        game.controller_options(team=0)
+        game.begin_device_selection()
+        game.escape()
+        assert not game.pending_gamepad_device
+        assert game.gamepad_device is second
+        first.buttons[3].pressed = second.buttons[3].pressed = False
+        game.begin_device_selection()
+        first.buttons[1].pressed = True
+        game.poll_gamepad(0)
+        assert game.gamepad_device is first
+        assert game.second_gamepad_device is second
+        assert game.gamepad_bindings == green_bindings
+        game.scan_gamepad()
+        assert game.gamepad_device is first and game.second_gamepad_device is second
+    finally:
+        game.destroy()
+
+
+def test_identical_usb_devices_configure_and_play_simultaneously(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from panda3d.core import ClockObject, InputDevice, loadPrcFileData
+    from tests.test_gamepad import fake_gamepad
+    loadPrcFileData('', 'audio-library-name null')
+    import game.app as app
+    game = app.Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        green, blue = fake_gamepad(), fake_gamepad()
+        blue.poll = green.poll
+        green.device_class = blue.device_class = InputDevice.DeviceClass.gamepad
+        assert green == blue and green is not blue
+        monkeypatch.setattr(app, 'InputDeviceManager', SimpleNamespace(getGlobalPtr=lambda: SimpleNamespace(getDevices=lambda: [green, blue])))
+        game.scan_gamepad()
+        assert game.gamepad_device is green
+        assert game.second_gamepad_device is blue
+        game.scan_gamepad()
+        assert game.gamepad_device is green and game.second_gamepad_device is blue
+        game.controller_options(team=1)
+        game.begin_device_selection()
+        blue.buttons[0].pressed = True
+        game.poll_gamepad(0)
+        assert game.second_gamepad_device is blue and game.gamepad_device is green
+        blue.buttons[0].pressed = False
+        game.begin_gamepad_binding('run')
+        green.buttons[3].pressed = True
+        game.poll_gamepad(0)
+        assert game.pending_gamepad_action == 'run'
+        blue.buttons[6].pressed = True
+        game.poll_gamepad(0)
+        assert game.second_gamepad_bindings['run'] == 'button:6'
+        assert game.gamepad_bindings['run'] == 'button:2'
+        green.buttons[3].pressed = blue.buttons[6].pressed = False
+        clock = ClockObject.getGlobalClock()
+        clock.setMode(ClockObject.MNonRealTime)
+        clock.setDt(1 / 60)
+        menu_inputs = []
+        monkeypatch.setattr(game, 'navigate_menu', lambda actions, elapsed: menu_inputs.append(actions.copy()))
+        green.axes[1].value = 1
+        game.taskMgr.step()
+        assert not menu_inputs[-1]['up']
+        blue.axes[0].value = 1
+        game.taskMgr.step()
+        assert menu_inputs[-1]['right'] and not menu_inputs[-1]['up']
+        game.new_capture()
+        one, two = game.capture_match.players
+        one.x, one.y = 0, -25
+        two.x, two.y = 10, -25
+        game.local_headings = [0, 0]
+        game.taskMgr.step()
+        assert one.x == pytest.approx(0) and one.y > -25
+        assert two.x > 10 and two.y == pytest.approx(-25)
+        green.axes[1].value = 0
+        blue.axes[0].value = 0
+        game.scan_gamepad()
+        assert green == blue
+        assert game.gamepad_device is green and game.second_gamepad_device is blue
+    finally:
+        game.destroy()
+
+
+def test_capture_minimaps_positions_and_lifecycle(tmp_path):
+    from panda3d.core import loadPrcFileData
+    from game.state import FIELD_LIMIT
+    loadPrcFileData('', 'audio-library-name null')
+    from game.app import Game
+    game = Game(offscreen=True, storage_directory=tmp_path)
+    try:
+        game.new_capture()
+        assert len(game.capture_minimaps) == 2
+        assert [panel.getZ() for panel in game.capture_minimaps] == pytest.approx([-0.22, -1.22])
+        assert game.capture_minimaps[0]['image'] == game.capture_minimaps[1]['image']
+        for positions in [((-20, 10), (30, -40)),
+                          ((-FIELD_LIMIT, FIELD_LIMIT), (FIELD_LIMIT, -FIELD_LIMIT)),
+                          ((0, 0), (0, 0))]:
+            for player, (x, y) in zip(game.capture_match.players, positions):
+                player.x, player.y = x, y
+            game.update_capture(0, {})
+            for markers in game.capture_map_markers:
+                for marker, player in zip(markers, game.capture_match.players):
+                    assert marker.getX() == pytest.approx(player.x * 0.14 / FIELD_LIMIT)
+                    assert marker.getZ() == pytest.approx(player.y * 0.14 / FIELD_LIMIT)
+                    assert abs(marker.getX()) <= 0.14
+                    assert abs(marker.getZ()) <= 0.14
+                assert markers[0]['frameColor'][1] > markers[0]['frameColor'][2]
+                assert markers[1]['frameColor'][2] > markers[1]['frameColor'][1]
+        old_maps = game.capture_minimaps.copy()
+        game.main_menu()
+        assert all(panel.isEmpty() for panel in old_maps)
+        game.resume_capture()
+        assert len(game.capture_minimaps) == 2
+        game.new_capture()
+        for markers in game.capture_map_markers:
+            for marker, player in zip(markers, game.capture_match.players):
+                assert marker.getX() == pytest.approx(player.x * 0.14 / FIELD_LIMIT)
+                assert marker.getZ() == pytest.approx(player.y * 0.14 / FIELD_LIMIT)
+        old_maps = game.capture_minimaps.copy()
+        game.new_game()
+        assert all(panel.isEmpty() for panel in old_maps)
+        assert not game.minimap.isEmpty()
     finally:
         game.destroy()

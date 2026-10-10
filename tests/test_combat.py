@@ -416,3 +416,27 @@ def test_few_terrain_blocks_have_wide_stairs_on_only_one_side():
     assert terrain_height(-20, -9.9) == pytest.approx(2.4)
     assert terrain_height(18.1, 25.1) == pytest.approx(3.2)
     assert terrain_height(59.9, -41.9) == pytest.approx(-1.6)
+
+
+@pytest.mark.parametrize('start,end', [
+    ((-26, 45), (-24, 45)), ((-40, 31), (-40, 29)),
+    ((-40, 59), (-40, 61)), ((-54, 45), (-56, 45)),
+    ((23, -20), (21, -20)), ((59, -20), (61, -20)),
+    ((40, -41), (40, -43)), ((40, -2), (40, 0)),
+])
+def test_player_can_jump_out_of_every_pit_side(start, end):
+    from game.world import jump_player, move_on_terrain, update_player_actions
+    player = Player(x=start[0], y=start[1])
+    player.x, player.y = end
+    move_on_terrain(player, *start)
+    assert (player.x, player.y) == start  # Caminhar não atravessa a parede.
+    assert jump_player(player)
+    assert not jump_player(player)
+    update_player_actions(player, 0.5)
+    player.x, player.y = end
+    move_on_terrain(player, *start)
+    assert (player.x, player.y) == end
+    for _ in range(30):
+        update_player_actions(player, 0.05)
+    assert player.z == 0
+    assert player.health == 5
